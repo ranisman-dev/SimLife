@@ -158,3 +158,14 @@ None — no external service configuration required.
 ---
 *Phase: 01-verification-infrastructure*
 *Completed: 2026-08-12*
+
+## Self-Check: PASSED
+
+- FOUND: scripts/verify.js
+- FOUND: scripts/baseline.json
+- FOUND: PERSON-MODEL.md (modified)
+- FOUND: .planning/phases/01-verification-infrastructure/01-03-SUMMARY.md
+- FOUND: 099f595 (Task 1 commit)
+- FOUND: 7966cbb (Task 2 commit)
+- FOUND: 678b7f7 (Task 3 commit)
+- FOUND: 974cdac (SUMMARY commit)
