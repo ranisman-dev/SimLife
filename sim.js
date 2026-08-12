@@ -1104,6 +1104,298 @@ function pickScapegoat(world, witness, actualActorId, victimId) {
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
+// ── Regression / verification harness (Plan 01-02) ──────────────
+
+// Derives which agents a scripted scenario actually involved, from the event
+// log and each agent's own perception state — never a hardcoded count or a
+// fixed pair. D-09.1, LOCKED: this generalizes past today's two-clone case to
+// Phase 2's witness-ordering baseline (an attacker, a victim, and multiple
+// bystanders). The one thing this function must never do is assume how many
+// agents a scenario involves.
+//
+// Included, by union:
+//   - every event.actor across world.events (who did something)
+//   - every event.data.targetId across world.events, where present (who was
+//     acted upon)
+//   - any agent with a non-null mind that shows perception activity
+//     (memories/reactedEventIds/log) even if they never acted or were
+//     targeted — this is what catches a pure bystander who witnessed the
+//     event and chose not to act, exactly the Phase 2 case.
+// Agents that neither acted, were acted upon, nor perceived anything are
+// deliberately excluded — CONTEXT.md D-09.1 explicitly permits leaving out
+// state genuinely unrelated to the tested interaction.
+function scenarioParticipants(world) {
+  const ids = new Set();
+  world.events.forEach(ev => {
+    ids.add(ev.actor);
+    if (ev.data && ev.data.targetId) ids.add(ev.data.targetId);
+  });
+  Object.values(world.agents).forEach(a => {
+    if (a.mind && (a.mind.memories.length > 0 || a.mind.reactedEventIds.size > 0 || a.mind.log.length > 0)) {
+      ids.add(a.id);
+    }
+  });
+  return Array.from(ids).sort();
+}
+
+// Plain, fully JSON-round-trippable snapshot of a scenario, scoped to
+// agentIds (defaulting to scenarioParticipants(world)). Does not mutate
+// world. Serialization notes — get these exactly right, they are the whole
+// correctness surface of the regression check:
+//   - Reuses presentation.js's Set-aware JSON replacer idiom
+//     (value instanceof Set -> Array.from(value)) so mind.reactedEventIds
+//     survives; without it a real change there would silently diff as "no
+//     change" at all.
+//   - world.rng (a closure) is dropped by JSON.stringify — deliberate and
+//     correct, the generator itself isn't meaningful to diff — but that's
+//     only safe because world.seed and world.rngCalls are carried explicitly
+//     as plain numbers below. rngCalls is what makes a change in RNG
+//     consumption diagnosable as one named field instead of a wall of
+//     unexplained numeric drift across every downstream value. Do not "fix"
+//     this omission by trying to serialize world.rng.
+//   - No `rng` key is included in the returned object at all.
+function snapshotWorld(world, agentIds) {
+  const ids = agentIds || scenarioParticipants(world);
+  const agents = {};
+  ids.forEach(id => { agents[id] = world.agents[id]; });
+  const raw = {
+    seed: world.seed,
+    rngCalls: world.rngCalls,
+    tick: world.tick,
+    nextEventId: world.nextEventId,
+    events: world.events,
+    agents,
+  };
+  return JSON.parse(JSON.stringify(raw, (key, value) => (value instanceof Set ? Array.from(value) : value)));
+}
+
+function isContainer(v) { return v !== null && typeof v === 'object'; }
+
+// Two values recurse together only when they're containers of the same
+// shape (both arrays, or both plain objects) — a leaf, null, or a
+// container-vs-leaf mismatch all fall through to a direct !== comparison
+// instead.
+function sameContainerType(a, b) { return isContainer(a) && isContainer(b) && Array.isArray(a) === Array.isArray(b); }
+
+function containerHasKey(container, key) {
+  return Array.isArray(container) ? key < container.length : Object.prototype.hasOwnProperty.call(container, key);
+}
+
+// Sorted key order for objects (deterministic traversal, D-09.3); numeric
+// index range for arrays, sized to the longer of the two sides so a
+// length change surfaces as addition/removal entries at the tail.
+function containerKeys(a, b) {
+  if (Array.isArray(a)) {
+    const len = Math.max(a.length, b.length);
+    const keys = [];
+    for (let i = 0; i < len; i++) keys.push(i);
+    return keys;
+  }
+  return Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).sort();
+}
+
+// Walks two snapshots (or any two plain JSON-shaped values) and returns one
+// { path, from, to } entry per differing leaf, path being the dot-joined key
+// path from the root (array indices as numeric segments). Recurses through
+// plain objects/arrays; a key present on only one side reports an
+// addition/removal at that path without recursing into whichever side
+// actually has a subtree there. Deterministic: sorted key order at every
+// level, so the same pair of snapshots always yields the same diff array.
+function diffSnapshots(before, after) {
+  const diffs = [];
+  (function walk(a, b, path) {
+    if (sameContainerType(a, b)) {
+      containerKeys(a, b).forEach(key => {
+        const aHas = containerHasKey(a, key);
+        const bHas = containerHasKey(b, key);
+        const childPath = path === '' ? `${key}` : `${path}.${key}`;
+        if (aHas && bHas) {
+          walk(a[key], b[key], childPath);
+        } else if (aHas) {
+          diffs.push({ path: childPath, from: a[key], to: undefined });
+        } else {
+          diffs.push({ path: childPath, from: undefined, to: b[key] });
+        }
+      });
+      return;
+    }
+    if (a !== b) diffs.push({ path, from: a, to: b });
+  })(before, after, '');
+  return diffs;
+}
+
+// Renders a diff array as human-readable, field-by-field lines — never
+// prints, only returns (D-01: the same code backs both the Node script and
+// the browser dev console, so all printing belongs to the caller). Uses the
+// ASCII "->" arrow, never the Unicode arrow, so the output survives Windows
+// terminal code pages.
+function formatDiff(diffs) {
+  if (diffs.length === 0) return 'no differences';
+  const render = (v) => (v === undefined ? '(absent)' : (isContainer(v) ? JSON.stringify(v) : String(v)));
+  return diffs.map(d => `  ${d.path}: ${render(d.from)} -> ${render(d.to)}`).join('\n');
+}
+
+// Shared clone definition for the two-clone CompetitiveJungle regression
+// case (PERSON-MODEL.md's "Verified" claim). The positive/negative variants
+// receive the identical personality and values below and differ only in the
+// sign of the CompetitiveJungle worldview weight — that single-field
+// difference is what clone-specs-differ-in-exactly-one-field proves, and
+// what the tuning procedure (see buildCloneVariant) must never widen.
+const CLONE_SPEC = {
+  cloneId: 'ives',
+  victimId: 'mara',
+  weightMagnitude: 0.8,
+  personality: {
+    openness: 0.5, conscientiousness: 0.5, extraversion: 0.5,
+    agreeableness: 0.5, neuroticism: 0.4, boldness: 0.6,
+  },
+  values: [{ value: 'Justice', weight: 0.3 }],
+};
+
+// Builds one isolated, drift-off, DEFAULT_SEED-seeded world, overwrites the
+// clone's mind.personality/values/worldview from CLONE_SPEC (worldview
+// weight signed by `sign`), relocates every other NPC to 'away' so the
+// witness set is minimal, then has the player Attack the victim. Returns
+// the built world and the id of that Attack event — the event both clones
+// are judged on.
+//
+// Deliberately builds two *separate* worlds rather than putting both clones
+// in one — in a single world the victim reacts first (agent-list order puts
+// mara ahead of ives in computeWitnesses) and her reaction cascade would be
+// witnessed by both clones before either perceives the original event,
+// making the qualitative assertion depend on witness ordering, which Phase 2
+// (ORDER-01) is specifically going to change. Two isolated worlds running
+// the identical script under the identical seed is the controlled A/B
+// PERSON-MODEL.md:140-143 actually describes, and it is
+// ordering-independent by construction.
+function buildCloneVariant(sign) {
+  const world = createWorld();
+  world.driftEnabled = false;
+  seedRng(world);
+
+  const clone = world.agents[CLONE_SPEC.cloneId];
+  clone.mind.personality = { ...CLONE_SPEC.personality };
+  clone.mind.values = CLONE_SPEC.values.map(v => ({ ...v }));
+  clone.mind.worldview = [{ belief: 'CompetitiveJungle', weight: sign * CLONE_SPEC.weightMagnitude }];
+
+  Object.values(world.agents).forEach(a => {
+    if (a.id !== 'player' && a.id !== CLONE_SPEC.cloneId && a.id !== CLONE_SPEC.victimId) a.location = 'away';
+  });
+
+  const result = performAction(world, 'player', 'Attack', { targetId: CLONE_SPEC.victimId });
+  return { world, eventId: result.event.id };
+}
+
+// Reproduces PERSON-MODEL.md's two-clone CompetitiveJungle case as a
+// repeatable, seeded, drift-off check: two isolated worlds whose clones
+// differ in exactly one worldview weight, judged on the identical
+// player-Attack-victim event. Returns a structured result, never prints,
+// never throws on a failed check (a failure is a `false` in the returned
+// object, per the result-object idiom) — sim.js has zero I/O anywhere, and
+// this function is no exception. When opts.baseline is supplied (Plan 03
+// loads it from disk), additionally diffs the live snapshots against it.
+function runRegressionCheck(opts = {}) {
+  const jungle = buildCloneVariant(1);
+  const averse = buildCloneVariant(-1);
+  const cloneA = jungle.world.agents[CLONE_SPEC.cloneId];
+  const cloneB = averse.world.agents[CLONE_SPEC.cloneId];
+
+  const checks = [];
+
+  // Never escalatable: a failure here is a defect in this fixture, not a
+  // finding about the engine.
+  const personalityEqual = JSON.stringify(cloneA.mind.personality) === JSON.stringify(cloneB.mind.personality);
+  const valuesEqual = JSON.stringify(cloneA.mind.values) === JSON.stringify(cloneB.mind.values);
+  const worldviewOnlySignDiffers = cloneA.mind.worldview.length === 1 && cloneB.mind.worldview.length === 1
+    && cloneA.mind.worldview[0].belief === 'CompetitiveJungle' && cloneB.mind.worldview[0].belief === 'CompetitiveJungle'
+    && cloneA.mind.worldview[0].weight === CLONE_SPEC.weightMagnitude && cloneB.mind.worldview[0].weight === -CLONE_SPEC.weightMagnitude;
+  const specsDifferInOnlyOneField = personalityEqual && valuesEqual && worldviewOnlySignDiffers;
+  checks.push({
+    name: 'clone-specs-differ-in-exactly-one-field',
+    pass: specsDifferInOnlyOneField,
+    detail: specsDifferInOnlyOneField
+      ? `personality and values are identical between clones; worldview differs only in the CompetitiveJungle weight sign (+${CLONE_SPEC.weightMagnitude} vs -${CLONE_SPEC.weightMagnitude})`
+      : `clone variants differ in more than the CompetitiveJungle weight: personalityEqual=${personalityEqual} valuesEqual=${valuesEqual} worldviewOnlySignDiffers=${worldviewOnlySignDiffers}`,
+  });
+
+  // Never escalatable: drift is set off in both worlds by this function itself.
+  const driftOff = isDriftEnabled(jungle.world) === false && isDriftEnabled(averse.world) === false;
+  checks.push({
+    name: 'drift-disabled',
+    pass: driftOff,
+    detail: `jungle isDriftEnabled=${isDriftEnabled(jungle.world)}, averse isDriftEnabled=${isDriftEnabled(averse.world)}`,
+  });
+
+  // Behavioral claim 1/3 — scoped by causedBy, not "any Attack by the clone".
+  const positiveAttackEvent = jungle.world.events.find(ev =>
+    ev.verb === 'Attack' && ev.actor === CLONE_SPEC.cloneId && ev.data && ev.data.targetId === 'player' && ev.causedBy === jungle.eventId
+  );
+  checks.push({
+    name: 'positive-clone-attacks-player',
+    pass: !!positiveAttackEvent,
+    detail: positiveAttackEvent
+      ? `${CLONE_SPEC.cloneId} attacked player as event #${positiveAttackEvent.id}, caused by #${jungle.eventId}`
+      : `no Attack event by ${CLONE_SPEC.cloneId} against player caused by #${jungle.eventId} was found`,
+  });
+
+  // Behavioral claim 2/3 — scoped by causedBy (symmetric with the check
+  // above), not "no event by the clone at all": the victim can react first
+  // and the clone perceiving her reaction is unrelated to the variable under
+  // test. `do nothing` and the impact-too-small early return (which pushes
+  // no event either way) both satisfy this.
+  const negativeReactionEvent = averse.world.events.find(ev => ev.actor === CLONE_SPEC.cloneId && ev.causedBy === averse.eventId);
+  checks.push({
+    name: 'negative-clone-takes-no-action',
+    pass: !negativeReactionEvent,
+    detail: negativeReactionEvent
+      ? `${CLONE_SPEC.cloneId} still acted: event #${negativeReactionEvent.id} (${negativeReactionEvent.verb}) caused by #${averse.eventId}`
+      : `${CLONE_SPEC.cloneId} took no action in response to event #${averse.eventId}`,
+  });
+
+  // Behavioral claim 3/3 — carries both verbatim `chose` labels in `detail`.
+  // A clone with no matching mind.log entry (the impact-too-small early
+  // return pushes none) is not a check-implementation error — its `chose`
+  // is treated as the literal string '(no entry)' and compared normally.
+  const positiveTrigger = `ev#${jungle.eventId} Attack by player`;
+  const negativeTrigger = `ev#${averse.eventId} Attack by player`;
+  const positiveLogEntry = cloneA.mind.log.find(e => e.trigger === positiveTrigger);
+  const negativeLogEntry = cloneB.mind.log.find(e => e.trigger === negativeTrigger);
+  const positiveChose = positiveLogEntry ? positiveLogEntry.chose : '(no entry)';
+  const negativeChose = negativeLogEntry ? negativeLogEntry.chose : '(no entry)';
+  const diverge = positiveChose !== negativeChose;
+  checks.push({
+    name: 'reactions-diverge',
+    pass: diverge,
+    detail: `positive clone chose "${positiveChose}"; negative clone chose "${negativeChose}"`,
+  });
+
+  const snapshots = {
+    jungle: snapshotWorld(jungle.world),
+    averse: snapshotWorld(averse.world),
+  };
+
+  const result = { pass: checks.every(c => c.pass), checks, snapshots };
+
+  if (opts.baseline) {
+    const diffs = [];
+    ['jungle', 'averse'].forEach(name => {
+      diffSnapshots(opts.baseline[name], snapshots[name]).forEach(d => {
+        diffs.push({ path: `${name}.${d.path}`, from: d.from, to: d.to });
+      });
+    });
+    const baselineMatches = diffs.length === 0;
+    checks.push({
+      name: 'snapshot-matches-baseline',
+      pass: baselineMatches,
+      detail: baselineMatches ? 'live snapshots match the supplied baseline exactly' : `${diffs.length} field(s) differ from the supplied baseline`,
+    });
+    result.diffs = diffs;
+    result.pass = result.pass && baselineMatches;
+  }
+
+  return result;
+}
+
 // ── Public API ──────────────────────────────────────────────
 
 const Sim = {
@@ -1120,6 +1412,11 @@ const Sim = {
   performAction,
   getAgent,
   memoryStrength,
+  scenarioParticipants,
+  snapshotWorld,
+  diffSnapshots,
+  formatDiff,
+  runRegressionCheck,
 };
 
 if (typeof window !== 'undefined') window.Sim = Sim;
