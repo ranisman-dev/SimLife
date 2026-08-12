@@ -44,7 +44,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Every random outcome in a session (Attack damage rolls, gossip truth-telling, scapegoat selection) flows through one seeded `rng()` call site and is reproducible by re-running with the same seed.
   3. All Phase 2 tuning numbers (thresholds, rates, decay constants) live in one named constants block (e.g. `Sim.DRIFT`), not scattered inline in `sim.js`.
   4. `PERSON-MODEL.md` and `PROJECT.md`'s Key Decisions table cite the real sources (Roberts/Walton/Viechtbauer 2006, Sherif's Social Judgment Theory, Prochaska & DiClemente as structural parallel) in place of the non-existent "Phelps-Roper framework." *(Constraint-derived — doc/code drift is treated as a bug per CLAUDE.md; not tied to a specific v1 requirement.)*
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Seeded RNG (mulberry32 on `world.rng`), the `Sim.TUNING` constants block, and the `isDriftEnabled` accessor; all three `Math.random()` call sites rewired
+- [ ] 01-02-PLAN.md — Regression harness in `sim.js`: scenario-scoped snapshotting, snapshot diffing with human-readable formatting, and `Sim.runRegressionCheck()` reproducing the two-clone `CompetitiveJungle` case
+- [ ] 01-03-PLAN.md — `scripts/verify.js` CLI with `--update-baseline`, the committed golden-master `scripts/baseline.json`, and the PERSON-MODEL.md citation fix
+
 **Research**: Skip — directly derived from PROJECT.md's own stated risks, mechanical, no open design question.
 
 ### Phase 2: Witness Reaction Ordering
@@ -122,7 +128,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
-| 1. Verification Infrastructure | 0/1 | Not started | - |
+| 1. Verification Infrastructure | 0/3 | Not started | - |
 | 2. Witness Reaction Ordering | 0/1 | Not started | - |
 | 3. Belief Decay & Needs Regeneration | 0/1 | Not started | - |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
