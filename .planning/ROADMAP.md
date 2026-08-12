@@ -53,7 +53,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Seeded RNG (mulberry32 on `world.rng`), the `Sim.TUNING` constants block, and the `isDriftEnabled` accessor; all three `Math.random()` call sites rewired
+- [x] 01-01-PLAN.md — Seeded RNG (mulberry32 on `world.rng`), the `Sim.TUNING` constants block, and the `isDriftEnabled` accessor; all three `Math.random()` call sites rewired
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -158,7 +158,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
-| 1. Verification Infrastructure | 0/3 | Not started | - |
+| 1. Verification Infrastructure | 1/3 | In Progress|  |
 | 2. Witness Reaction Ordering | 0/1 | Not started | - |
 | 3. Belief Decay & Needs Regeneration | 0/1 | Not started | - |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
