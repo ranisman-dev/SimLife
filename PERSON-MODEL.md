@@ -298,11 +298,18 @@ intentionally deferred, not part of this bank.
 
 ### Phase 2 — slow drift for Personality/Values/Worldview (needs design first)
 
-The Phelps-Roper framework (intentional vs. unintentional change, sustained
-pressure vs. one intense event, the regression trap for unintentional
-shifts reverting once the pressure lifts, neuroticism modulating how long
-a shift takes to settle). Deliberately not scoped yet — needs concrete
-answers before it's buildable, not during:
+Roberts, Walton & Viechtbauer (2006)'s cumulative-continuity meta-analysis
+(grounding slow personality drift), Sherif's Social Judgment Theory
+(grounding resistance to change and ego-involvement), and Prochaska &
+DiClemente's relapse stage as a structural parallel, not a direct citation
+of the mechanism (grounding the regression trap) — intentional vs.
+unintentional change, sustained pressure vs. one intense event, the
+regression trap for unintentional shifts reverting once the pressure
+lifts, neuroticism modulating how long a shift takes to settle. (This
+passage previously mis-cited a "Phelps-Roper framework" — Megan
+Phelps-Roper is a case study, not a framework author; see PROJECT.md's Key
+Decisions table for the correction.) Deliberately not scoped yet — needs
+concrete answers before it's buildable, not during:
 
 - What counts as "sustained pressure"? A running counter per trait/value/
   belief that increments on contradicting events and decays when
