@@ -98,7 +98,7 @@ changing under pressure, plus closing the gaps that currently undercut it.)*
 | Feature | Reason |
 |---------|--------|
 | Authored trait/quirk taxonomy | Disproportionate authoring cost for a 5-NPC prototype; shifts focus away from the stated Core Value (belief divergence) |
-| Player-facing pressure/drift gauge | No UI surface requested; exposing raw pressure numbers to the player isn't part of this milestone |
+| Player-facing pressure/drift gauge | No *player*-facing UI surface requested. Debug-only visibility is fine and expected — `pressure`/`anchor`/`weight` should show up in the existing mind inspector (`presentation.js`'s debug/dev view) the same way beliefs, goals, and `event.why`/`mind.log` provenance already do; this line only excludes a deliberately designed meter shown to the actual player during normal play |
 | Ecology/economy world-systems (hunting, farming, businesses) | Long-term Core Value, not this milestone — see `PROJECT.md` Out of Scope |
 | `Tradition`/`Pleasure` values, superstition/spirituality worldview entries | No honest mechanic to attach them to in the current five-verb sim — see `PROJECT.md` |
 | Automated test suite | Verification infrastructure (VERIF-*) covers the immediate need without a full suite — see `PROJECT.md` |
