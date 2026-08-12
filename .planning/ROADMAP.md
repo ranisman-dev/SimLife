@@ -26,7 +26,7 @@ features.
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Verification Infrastructure** - Seeded RNG, a drift-off toggle that reproduces the original regression case, and one named constants block for every new tuning number
+- [x] **Phase 1: Verification Infrastructure** - Seeded RNG, a drift-off toggle that reproduces the original regression case, and one named constants block for every new tuning number (completed 2026-08-12)
 - [ ] **Phase 2: Witness Reaction Ordering** - NPCs react to a shared event in urgency order, not agent-list order
 - [ ] **Phase 3: Belief Decay & Needs Regeneration** - Beliefs fade like memories; safety/sustenance/belonging recover instead of only dropping
 - [ ] **Phase 4: Tell/Move-Aware Memory Importance** - Being told something severe forms a memory as important as witnessing it
@@ -61,7 +61,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03-PLAN.md — `scripts/verify.js` CLI with `--update-baseline`, the committed golden-master `scripts/baseline.json`, and the PERSON-MODEL.md citation fix
+- [x] 01-03-PLAN.md — `scripts/verify.js` CLI with `--update-baseline`, the committed golden-master `scripts/baseline.json`, and the PERSON-MODEL.md citation fix
 
 **Research**: Skip — directly derived from PROJECT.md's own stated risks, mechanical, no open design question.
 
@@ -158,7 +158,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
-| 1. Verification Infrastructure | 2/3 | In Progress|  |
+| 1. Verification Infrastructure | 3/3 | Complete   | 2026-08-12 |
 | 2. Witness Reaction Ordering | 0/1 | Not started | - |
 | 3. Belief Decay & Needs Regeneration | 0/1 | Not started | - |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
