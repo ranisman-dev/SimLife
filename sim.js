@@ -1104,6 +1104,71 @@ function pickScapegoat(world, witness, actualActorId, victimId) {
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
+// ── Regression / verification harness (Plan 01-02) ──────────────
+
+// Derives which agents a scripted scenario actually involved, from the event
+// log and each agent's own perception state — never a hardcoded count or a
+// fixed pair. D-09.1, LOCKED: this generalizes past today's two-clone case to
+// Phase 2's witness-ordering baseline (an attacker, a victim, and multiple
+// bystanders). The one thing this function must never do is assume how many
+// agents a scenario involves.
+//
+// Included, by union:
+//   - every event.actor across world.events (who did something)
+//   - every event.data.targetId across world.events, where present (who was
+//     acted upon)
+//   - any agent with a non-null mind that shows perception activity
+//     (memories/reactedEventIds/log) even if they never acted or were
+//     targeted — this is what catches a pure bystander who witnessed the
+//     event and chose not to act, exactly the Phase 2 case.
+// Agents that neither acted, were acted upon, nor perceived anything are
+// deliberately excluded — CONTEXT.md D-09.1 explicitly permits leaving out
+// state genuinely unrelated to the tested interaction.
+function scenarioParticipants(world) {
+  const ids = new Set();
+  world.events.forEach(ev => {
+    ids.add(ev.actor);
+    if (ev.data && ev.data.targetId) ids.add(ev.data.targetId);
+  });
+  Object.values(world.agents).forEach(a => {
+    if (a.mind && (a.mind.memories.length > 0 || a.mind.reactedEventIds.size > 0 || a.mind.log.length > 0)) {
+      ids.add(a.id);
+    }
+  });
+  return Array.from(ids).sort();
+}
+
+// Plain, fully JSON-round-trippable snapshot of a scenario, scoped to
+// agentIds (defaulting to scenarioParticipants(world)). Does not mutate
+// world. Serialization notes — get these exactly right, they are the whole
+// correctness surface of the regression check:
+//   - Reuses presentation.js's Set-aware JSON replacer idiom
+//     (value instanceof Set -> Array.from(value)) so mind.reactedEventIds
+//     survives; without it a real change there would silently diff as "no
+//     change" at all.
+//   - world.rng (a closure) is dropped by JSON.stringify — deliberate and
+//     correct, the generator itself isn't meaningful to diff — but that's
+//     only safe because world.seed and world.rngCalls are carried explicitly
+//     as plain numbers below. rngCalls is what makes a change in RNG
+//     consumption diagnosable as one named field instead of a wall of
+//     unexplained numeric drift across every downstream value. Do not "fix"
+//     this omission by trying to serialize world.rng.
+//   - No `rng` key is included in the returned object at all.
+function snapshotWorld(world, agentIds) {
+  const ids = agentIds || scenarioParticipants(world);
+  const agents = {};
+  ids.forEach(id => { agents[id] = world.agents[id]; });
+  const raw = {
+    seed: world.seed,
+    rngCalls: world.rngCalls,
+    tick: world.tick,
+    nextEventId: world.nextEventId,
+    events: world.events,
+    agents,
+  };
+  return JSON.parse(JSON.stringify(raw, (key, value) => (value instanceof Set ? Array.from(value) : value)));
+}
+
 // ── Public API ──────────────────────────────────────────────
 
 const Sim = {
@@ -1120,6 +1185,8 @@ const Sim = {
   performAction,
   getAgent,
   memoryStrength,
+  scenarioParticipants,
+  snapshotWorld,
 };
 
 if (typeof window !== 'undefined') window.Sim = Sim;
