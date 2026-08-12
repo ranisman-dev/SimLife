@@ -1,3 +1,19 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: planning
+stopped_at: Phase 1 context gathered
+last_updated: "2026-08-12T17:19:10.469Z"
+last_activity: 2026-08-12 — Roadmap created, requirements mapped, coverage validated 22/22
+progress:
+  total_phases: 7
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
+---
+
 # Project State
 
 ## Project Reference
@@ -19,6 +35,7 @@ Progress: [░░░░░░░░░░] 0%
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: - min
 - Total execution time: 0 hours
@@ -30,6 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: -
 - Trend: -
 
@@ -45,6 +63,9 @@ Recent decisions affecting current work:
 - Roadmap: Horizontal Layers mode confirmed — 7 phases follow research's dependency order (Verification → Ordering → Decay/Needs → Tell/Move Memory → Drift → Snap → Reactivation), not separable user-facing slices.
 - Roadmap: Snap (Phase 6) depends on Tell/Move (Phase 4) in addition to Drift (Phase 5) — snap must be able to fire from a told event, not only a witnessed one (PITFALLS-4).
 - Roadmap: Belief Decay/Needs (Phase 3) depends on Witness Ordering (Phase 2), not just Verification (Phase 1) — DECAY-05's hysteresis touches the retreat gate near Phase 2's extracted `scoreCandidates()`.
+- Phase 1 (LOCKED, cross-phase — binds Phases 5-7): RNG scope discipline. The only RNG allowed to decide something *important* is a one-time world/people genesis roll (not applicable today — `createWorld()` is fully deterministic; standing rule for future procedural generation). After genesis, everything is cause-and-effect. `decideAndAct()` must stay fully deterministic — RNG never decides *what* an NPC does. This binds Phase 6's Snap threshold (must be a deterministic function of context, never a probabilistic roll) and Phase 7's reactivation-trigger matching. RNG stays scoped to stochastic texture on already-decided actions only (Attack damage magnitude, gossip honesty flip, scapegoat pick). Full detail: `.planning/phases/01-verification-infrastructure/01-CONTEXT.md` D-05.
+- Phase 1: `createWorld()` stays untouched (no seed param) — seeding happens via a separate `Sim.seedRng(world, seed)` called explicitly after `createWorld()`, keeping RNG state on `world` rather than coupling it into an unrelated function.
+- Phase 1: Scripted-scenario baselines (this phase's regression check, and Phase 2's witness-ordering diff) must scope their snapshot to the agents actually involved, not a hardcoded count — future scenarios may involve 3+ agents.
 
 ### Pending Todos
 
@@ -67,6 +88,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-12
-Stopped at: ROADMAP.md and STATE.md created; REQUIREMENTS.md traceability updated
-Resume file: None
+Last session: 2026-08-12T17:19:10.457Z
+Stopped at: Phase 1 context gathered
+Resume file: .planning/phases/01-verification-infrastructure/01-CONTEXT.md
