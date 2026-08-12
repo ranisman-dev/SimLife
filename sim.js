@@ -353,7 +353,7 @@ function applyEffects(world, actor, verb, params) {
     }
     case 'Attack': {
       const target = getAgent(world, params.targetId);
-      const damage = 15 + Math.floor(Math.random() * 15);
+      const damage = 15 + Math.floor(rngOf(world)() * 15);
       target.health = Math.max(0, target.health - damage);
       if (target.health === 0) target.alive = false;
       if (!target.isPlayer) adjustNeed(target, 'safety', -0.4);
@@ -1016,7 +1016,7 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
   const confidant = pickConfidant(world, witness, actorId, event.data.targetId);
   if (confidant && !believesDead(witness, confidant)) {
     const honestyWeight = getValueWeight(witness, 'Honesty');
-    const truthful = Math.random() < clamp(0.5 + honestyWeight * 0.45, 0.05, 0.97);
+    const truthful = rngOf(world)() < clamp(0.5 + honestyWeight * 0.45, 0.05, 0.97);
     const subject = truthful ? actorId : pickScapegoat(world, witness, actorId, event.data.targetId);
     const predicate = event.verb === 'Attack' ? 'attacked' : 'stole_from';
     const claim = { predicate, subject, victim: event.data.targetId, item: event.data.item };
@@ -1094,7 +1094,7 @@ function pickScapegoat(world, witness, actualActorId, victimId) {
     return clamp(1.2 - rel.affection - rel.trust * 0.5, 0.1, 3);
   });
   const total = weights.reduce((a, b) => a + b, 0);
-  let roll = Math.random() * total;
+  let roll = rngOf(world)() * total;
   for (let i = 0; i < others.length; i++) {
     roll -= weights[i];
     if (roll <= 0) return others[i];
