@@ -99,14 +99,16 @@ function getWorldviewWeight(agent, beliefName) {
 }
 
 // General willingness to care about a wrong done to someone else — temperament
-// (Agreeableness) and an explicit Compassion value push it up; seeing the
-// world as a ruthless competition (CompetitiveJungle) pulls it back down,
-// since a wrong to a stranger reads less like something worth caring about.
+// (Agreeableness) and an explicit Compassion value push it up, same as valuing
+// Community — caring about the collective, not just people already liked;
+// seeing the world as a ruthless competition (CompetitiveJungle) pulls it back
+// down, since a wrong to a stranger reads less like something worth caring about.
 function generalCareOf(witness) {
   return clamp(
     0.15
     + witness.mind.personality.agreeableness * 0.3
     + getValueWeight(witness, 'Compassion') * 0.3
+    + getValueWeight(witness, 'Community') * 0.2
     - getWorldviewWeight(witness, 'CompetitiveJungle') * 0.25,
     0, 1
   );
@@ -200,6 +202,7 @@ function performAction(world, actorId, verb, params = {}, opts = {}) {
     location,
     data,
     causedBy: opts.causedBy || null, // eventId this was a reaction to, for provenance
+    why: opts.why || null, // readable summary of the top traits/values/worldview terms that drove this choice, for display only
   };
   world.events.push(event);
 
@@ -477,7 +480,8 @@ function appraiseEvent(world, witness, event) {
     const offense = clamp(0.5 + justiceWeight * 0.5, 0, 1); // absent Justice value -> moderate baseline offense
     impact = -1 * offense * scale;
   } else if (event.verb === 'Attack') {
-    impact = -1.2;
+    const safetyWeight = getValueWeight(witness, 'Safety'); // absent Safety value -> baseline -1.2
+    impact = -1.2 * (1 + safetyWeight * 0.3);
   } else if (event.verb === 'Give') {
     impact = 0.4 * scale;
   }
@@ -504,7 +508,10 @@ function applyAppraisal(world, witness, event, appraisal) {
       rel.fear = clamp(rel.fear - impact * 0.3 * (0.5 + witness.mind.personality.neuroticism * 0.5), 0, 1);
       pushEmotion(witness, 'Fear', event.actor, -impact * 0.8, event.tick);
     }
-    pushEmotion(witness, appraisal.isVictim ? 'Anger' : 'Indignation', event.actor, -impact, event.tick);
+    // Matches the Fear scaling two lines up — a more neurotic witness feels the same
+    // event more intensely, not just more fearfully.
+    const reactivity = 0.7 + witness.mind.personality.neuroticism * 0.6;
+    pushEmotion(witness, appraisal.isVictim ? 'Anger' : 'Indignation', event.actor, -impact * reactivity, event.tick);
     if (appraisal.isVictim) upsertGoal(witness, 'SeekRestitution', event.actor, -impact, event.tick, 'current', { sourceEventId: event.id });
   } else {
     // A kind act is still a kind act at face value (trust/affection rise above already
@@ -531,20 +538,40 @@ function checkContradiction(world, witness, claim) {
   const subjectAgent = world.agents[claim.subject];
 
   if (claim.predicate === 'is_dead') {
-    if (!subjectAgent) return false;
-    if (claim.subject === witness.id) return subjectAgent.alive;
-    return subjectAgent.alive && coLocated(world, witness.id, claim.subject);
+    if (!subjectAgent) return { contradicted: false, selfPerpetratedMisattribution: false };
+    const contradicted = claim.subject === witness.id
+      ? subjectAgent.alive
+      : subjectAgent.alive && coLocated(world, witness.id, claim.subject);
+    return { contradicted, selfPerpetratedMisattribution: false };
   }
 
   if (claim.predicate === 'stole_from' || claim.predicate === 'attacked') {
-    const selfKnowledge = witness.id === claim.subject || witness.id === claim.victim;
-    if (selfKnowledge) {
+    const namedInClaim = witness.id === claim.subject || witness.id === claim.victim;
+
+    // I don't need a recorded "witnessed" belief to know what I did with my
+    // own hands, and I don't need to be the one the claim *names* to know
+    // it's wrong about who did this — actors never get a witnessed belief
+    // about their own actions (they're excluded from computeWitnesses), so
+    // without this check, someone could be told a fabricated story about
+    // their own crime and have no ground to catch it on.
+    const iDidThisToTheNamedVictim = world.events.some(ev =>
+      ev.actor === witness.id && ev.data && ev.data.targetId === claim.victim &&
+      ((claim.predicate === 'stole_from' && ev.verb === 'Take' && ev.data.consented === false) ||
+       (claim.predicate === 'attacked' && ev.verb === 'Attack'))
+    );
+
+    if (namedInClaim || iDidThisToTheNamedVictim) {
       const actuallyHappened = world.events.some(ev =>
         ev.actor === claim.subject && ev.data && ev.data.targetId === claim.victim &&
         ((claim.predicate === 'stole_from' && ev.verb === 'Take' && ev.data.consented === false) ||
          (claim.predicate === 'attacked' && ev.verb === 'Attack'))
       );
-      return !actuallyHappened;
+      // Being falsely named yourself and having someone else take the blame
+      // for what you actually did are different kinds of catch — the first is
+      // a lie told about you, the second is a lie that happens to protect you.
+      // applyClaimBelief routes them to different reactions.
+      const selfPerpetratedMisattribution = iDidThisToTheNamedVictim && !namedInClaim && !actuallyHappened;
+      return { contradicted: !actuallyHappened, selfPerpetratedMisattribution };
     }
 
     // Bystander ground truth: not omniscience about the world, just not needing
@@ -556,10 +583,10 @@ function checkContradiction(world, witness, claim) {
       b.predicate === eventVerb && b.source === 'witnessed' && b.data && b.data.targetId === claim.victim &&
       (claim.predicate !== 'stole_from' || b.data.consented === false)
     );
-    return !!eyewitnessed && eyewitnessed.subject !== claim.subject;
+    return { contradicted: !!eyewitnessed && eyewitnessed.subject !== claim.subject, selfPerpetratedMisattribution: false };
   }
 
-  return false; // opinions (is_trustworthy/is_dangerous) aren't the kind of thing ground truth settles
+  return { contradicted: false, selfPerpetratedMisattribution: false }; // opinions (is_trustworthy/is_dangerous) aren't the kind of thing ground truth settles
 }
 
 // Being caught in a lie doesn't damage trust in whoever the lie was about —
@@ -570,12 +597,49 @@ function reactToBeingLiedTo(witness, tellerId, claim, tick) {
   const honestyWeight = getValueWeight(witness, 'Honesty');
   const severity = clamp(0.5 + honestyWeight * 0.4, 0.15, 0.95);
 
+  // How much of that severity actually lands is gated by temperament — the same
+  // forgiveness lever a kind act gets credited against in applyAppraisal. An
+  // agreeable person can genuinely let a caught lie go; this isn't a second,
+  // invented concept, just the existing one applied here too. Forgiveness damps
+  // the hit, it doesn't erase it — even the most forgiving witness still notices.
+  const forgiveness = clamp(0.3 + witness.mind.personality.agreeableness * 0.7, 0.1, 1);
+  const landedSeverity = severity * (1 - forgiveness * 0.6);
+
   const rel = relOf(witness, tellerId);
-  rel.trust = clamp(rel.trust - 0.4 * severity, 0, 1);
-  rel.affection = clamp(rel.affection - 0.3 * severity, -1, 1);
-  rel.grievance = clamp(rel.grievance + 0.6 * severity, 0, 5);
-  pushEmotion(witness, 'Indignation', tellerId, severity, tick);
+  rel.trust = clamp(rel.trust - 0.4 * landedSeverity, 0, 1);
+  rel.affection = clamp(rel.affection - 0.3 * landedSeverity, -1, 1);
+  rel.grievance = clamp(rel.grievance + 0.6 * landedSeverity, 0, 5);
+  if (landedSeverity > 0.15) pushEmotion(witness, 'Indignation', tellerId, landedSeverity, tick);
   reassessGoals(witness, tellerId, tick);
+}
+
+// Someone else got blamed for something I actually did. That lie didn't wrong
+// me — it protected me — so the generic caught-in-a-lie reaction doesn't fit;
+// how I feel about it traces back to why I acted in the first place, not to
+// Honesty. Someone chasing Status wanted to be seen doing it and is denied
+// the credit, so they get the standard lie reaction after all. An impulsive
+// person (low Conscientiousness) is relieved it didn't land on them. Anyone
+// else mostly just notices the substitution without much feeling attached.
+function reactToBeingMisattributed(witness, tellerId, claim, tick, eventId) {
+  const wantedCredit = getValueWeight(witness, 'Status') > 0.3;
+  if (wantedCredit) {
+    reactToBeingLiedTo(witness, tellerId, claim, tick);
+    return;
+  }
+
+  const trigger = `ev#${eventId} misattributed ${claim.predicate}:${claim.subject}->${claim.victim}`;
+
+  if (witness.mind.personality.conscientiousness < 0.5) {
+    const rel = relOf(witness, tellerId);
+    rel.trust = clamp(rel.trust + 0.1, 0, 1);
+    rel.affection = clamp(rel.affection + 0.08, -1, 1);
+    pushEmotion(witness, 'Relief', tellerId, 0.25, tick);
+    reassessGoals(witness, tellerId, tick);
+    witness.mind.log.push({ tick, trigger, considered: [], chose: `relieved ${tellerId} named ${claim.subject} instead` });
+    return;
+  }
+
+  witness.mind.log.push({ tick, trigger, considered: [], chose: `wonders why ${tellerId} named ${claim.subject} instead of them` });
 }
 
 // Two accusations are competing explanations of the same incident either when
@@ -597,7 +661,7 @@ function findConflictingBeliefs(witness, claim) {
 }
 
 function applyClaimBelief(world, witness, tellerId, claim, confidence, source, tick, eventId) {
-  const contradicted = checkContradiction(world, witness, claim);
+  const { contradicted, selfPerpetratedMisattribution } = checkContradiction(world, witness, claim);
   let effectiveConfidence = contradicted ? 0 : confidence;
   let contested = false;
 
@@ -629,9 +693,27 @@ function applyClaimBelief(world, witness, tellerId, claim, confidence, source, t
     // A person who needs the world to be fair is more receptive to being
     // handed a reason wrongdoing happened — it fits the belief better than an
     // unprovoked, arbitrary act would. Someone who doesn't expect life to hand
-    // out clean explanations is correspondingly more skeptical of one.
+    // out clean explanations is correspondingly more skeptical of one. Openness
+    // is a second, independent lever on the same claim — receptiveness to an
+    // unconventional explanation, not fairness-motivated reasoning; centered on
+    // the 0.5 personality default so an average-openness witness gets no boost
+    // either way.
     const justWorldWeight = getWorldviewWeight(witness, 'JustWorld');
-    effectiveConfidence = clamp(effectiveConfidence + justWorldWeight * 0.15, 0, 1);
+    const opennessLean = witness.mind.personality.openness - 0.5;
+    effectiveConfidence = clamp(effectiveConfidence + justWorldWeight * 0.15 + opennessLean * 0.2, 0, 1);
+  }
+
+  if (!contradicted && (claim.predicate === 'stole_from' || claim.predicate === 'attacked')) {
+    // Loyalty makes it harder to credit wrongdoing about someone the witness is
+    // already close to — not because any new evidence changed, but because the
+    // accusation cuts against a bond they aren't eager to believe broken. Only
+    // engages when there's an existing relationship worth being loyal to; Loyalty
+    // alone, toward a stranger, has nothing to discount.
+    const loyaltyWeight = getValueWeight(witness, 'Loyalty');
+    const accusedAffection = relOf(witness, claim.subject).affection;
+    if (loyaltyWeight > 0 && accusedAffection > 0.3) {
+      effectiveConfidence = clamp(effectiveConfidence - loyaltyWeight * accusedAffection * 0.3, 0, 1);
+    }
   }
 
   witness.mind.beliefs.push({
@@ -647,12 +729,55 @@ function applyClaimBelief(world, witness, tellerId, claim, confidence, source, t
   });
 
   if (contradicted) {
-    reactToBeingLiedTo(witness, tellerId, claim, tick);
+    if (selfPerpetratedMisattribution) {
+      reactToBeingMisattributed(witness, tellerId, claim, tick, eventId);
+    } else {
+      reactToBeingLiedTo(witness, tellerId, claim, tick);
+    }
     return;
   }
 
   if (effectiveConfidence < 0.35) return; // too little support to act on it either way
   if (claim.subject === witness.id) return; // hearing unverifiable opinion about yourself doesn't need a relationship-with-self
+
+  // Corroboration should matter for someone who didn't see it happen — it
+  // shouldn't matter again, the same way, for someone who did. Without this
+  // guard, every bystander who independently repeats an already-witnessed
+  // fact back to the culprit re-damages the original witness's relationship a
+  // second time for information they already hold at full, first-hand
+  // confidence — a headcount effect, not anything to do with who the witness
+  // is. But being reminded isn't nothing: it keeps the memory (and the mood it
+  // caused) from fading the way it otherwise would have — the same decay
+  // clock `memoryStrength()` already governs, and the same one dormant
+  // `SeekRestitution` goals already check before resurfacing. A grudge that
+  // keeps getting brought up stays sharper, longer, than one nobody mentions
+  // again — without the hard trust/affection/grievance numbers moving twice
+  // for one incident.
+  //
+  // Checked against the event ledger (ground truth), not the witness's own
+  // belief array — reaction cascades recurse depth-first, so a bystander's
+  // immediate reaction can reach the actual victim as an "overhearer" before
+  // the victim's own turn in the outer witness loop has recorded their
+  // first-hand belief yet. Self-knowledge doesn't depend on when your own
+  // belief got written down; it depends on whether it happened to you.
+  const matchedEvent = (claim.predicate === 'stole_from' || claim.predicate === 'attacked') &&
+    world.events.find(ev =>
+      ev.actor === claim.subject && ev.data && ev.data.targetId === claim.victim &&
+      ((claim.predicate === 'stole_from' && ev.verb === 'Take' && ev.data.consented === false) ||
+       (claim.predicate === 'attacked' && ev.verb === 'Attack'))
+    );
+  const alreadyKnownFirsthand = matchedEvent && (
+    claim.victim === witness.id ||
+    witness.mind.beliefs.some(b => b.source === 'witnessed' && b.eventId === matchedEvent.id)
+  );
+
+  if (alreadyKnownFirsthand) {
+    const mem = witness.mind.memories.find(m => m.eventId === matchedEvent.id);
+    if (mem) mem.tick = tick;
+    const reactivity = 0.7 + witness.mind.personality.neuroticism * 0.6;
+    pushEmotion(witness, claim.victim === witness.id ? 'Anger' : 'Indignation', claim.subject, 0.3 * reactivity, tick);
+    return;
+  }
 
   if (claim.predicate === 'stole_from' || claim.predicate === 'attacked') {
     const rel = relOf(witness, claim.subject);
@@ -695,14 +820,49 @@ function believesDead(agent, id) {
 
 // ── Decide + Act: a small generic utility AI over the same 5 verbs ──
 
+// Picks the handful of named psychological levers (trait/value/worldview/
+// relationship/emotion) that actually drove a candidate's score, for display
+// only — never read back into scoring. Filters out near-zero and purely
+// situational terms (how bad the event itself was, which every candidate
+// shares and which says nothing about who this particular witness is), sorts
+// by how much each one moved the total, and keeps the top few.
+function explainTerms(terms) {
+  if (!terms) return '';
+  return Object.entries(terms)
+    .filter(([, v]) => Math.abs(v) > 0.015)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .slice(0, 3)
+    .map(([label]) => label)
+    .join(' + ');
+}
+
 function decideAndAct(world, witness, event, appraisal, priorRelationship) {
+  const { boldness, extraversion, agreeableness, conscientiousness } = witness.mind.personality;
+
+  // "Do nothing" is a real, personality-scored outcome, not a filler placeholder —
+  // a timid, introverted, easygoing witness can genuinely out-score every active
+  // response. Without this, silence was never actually reachable no matter how
+  // unbold or unsociable the witness was. Scored as a deviation from the 0.5
+  // personality default, not the raw trait value — an average-boldness,
+  // average-extraversion witness should reproduce the old flat baseline almost
+  // exactly, so this only meaningfully kicks in for a witness who's genuinely
+  // more timid/introverted (or bold/outgoing) than typical, rather than quietly
+  // inflating "do nothing" for most of the cast most of the time.
+  const doNothingTerms = {
+    boldness: (0.5 - boldness) * 0.4,
+    extraversion: (0.5 - extraversion) * 0.25,
+    agreeableness: (agreeableness - 0.5) * 0.15,
+  };
+  const doNothingScore = clamp(0.15 + doNothingTerms.boldness + doNothingTerms.extraversion + doNothingTerms.agreeableness, 0.05, 0.65);
+
   if (appraisal.impact >= -0.05) {
     if (appraisal.impact < 0) {
       witness.mind.log.push({
         tick: event.tick,
         trigger: `ev#${event.id} ${event.verb} by ${event.actor}`,
-        considered: [`do nothing=0.15`],
+        considered: [`do nothing=${doNothingScore.toFixed(2)}`],
         chose: `barely noticed — didn't care enough to react`,
+        why: explainTerms(doNothingTerms),
       });
     }
     return;
@@ -710,11 +870,10 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
 
   const actorId = event.actor;
   const rel = relOf(witness, actorId);
-  const { boldness } = witness.mind.personality;
   const anger = activeEmotionIntensity(witness, appraisal.isVictim ? 'Anger' : 'Indignation', actorId, event.tick);
   const candidates = [];
 
-  candidates.push({ action: null, label: 'do nothing', score: 0.15 });
+  candidates.push({ action: null, label: 'do nothing', score: doNothingScore, terms: doNothingTerms });
 
   // Use standing rapport (as it was before this event) for the social
   // judgment calls — whether to hear someone out or go gossip about them —
@@ -726,25 +885,52 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
   if (coLocated(world, witness.id, actorId)) {
     // Seeing the world as a ruthless competition (CompetitiveJungle) makes
     // resolving a dispute through dominance read as more natural, not a last resort.
-    const confrontScore = (-appraisal.impact) * 0.5 * boldness - rel.fear * (1 - boldness) + anger * 0.15
-      + getWorldviewWeight(witness, 'CompetitiveJungle') * 0.2;
+    // A temperamentally agreeable person resists reaching for violence even while
+    // angry (agreeableness), not just when scared (fear/boldness above). Honor only
+    // sharpens the pull to confront when the witness is themself the victim — punishing
+    // a wrong done to someone else is Justice's job upstream in appraiseEvent, not
+    // Honor's. Status adds a face-saving push, but only when someone else is around
+    // to see the confrontation happen — there's no face to save alone.
+    const othersWatching = agentsAt(world, witness.location, witness.id).length > 1;
+    const confrontTerms = {
+      boldness: (-appraisal.impact) * 0.5 * boldness,
+      fear: -rel.fear * (1 - boldness),
+      anger: anger * 0.15,
+      CompetitiveJungle: getWorldviewWeight(witness, 'CompetitiveJungle') * 0.2,
+      agreeableness: -(agreeableness - 0.5) * 0.3,
+      Honor: appraisal.isVictim ? getValueWeight(witness, 'Honor') * 0.2 : 0,
+      Status: othersWatching ? getValueWeight(witness, 'Status') * 0.15 : 0,
+    };
+    const confrontScore = Object.values(confrontTerms).reduce((a, b) => a + b, 0);
     candidates.push({
-      action: () => performAction(world, witness.id, 'Attack', { targetId: actorId }, { causedBy: event.id }),
+      action: (why) => performAction(world, witness.id, 'Attack', { targetId: actorId }, { causedBy: event.id, why }),
       label: `attack ${actorId}`,
       score: confrontScore,
+      terms: confrontTerms,
     });
 
     // Someone I actually like and trust, I'd rather ask what happened than
     // escalate to violence or go tell someone else behind their back. This is
     // always the truth as the witness saw it — there's no reason to lie to
-    // the person you're asking directly.
-    if (priorAffection > 0.2) {
+    // the person you're asking directly. Curiosity can open this door even
+    // without existing affection — wanting to know why doesn't require liking
+    // someone — and a conscientious witness leans toward getting the facts
+    // straight before reacting further.
+    const curiosityWeight = getValueWeight(witness, 'Curiosity');
+    if (priorAffection > 0.2 || curiosityWeight > 0.3) {
       const predicate = event.verb === 'Attack' ? 'attacked' : 'stole_from';
       const claim = { predicate, subject: actorId, victim: event.data.targetId, item: event.data.item };
+      const pressTerms = {
+        affection: (-appraisal.impact) * 0.4 * Math.max(priorAffection, 0.15),
+        trust: priorTrust * 0.2,
+        conscientiousness: conscientiousness * 0.15,
+        Curiosity: curiosityWeight * 0.15,
+      };
       candidates.push({
-        action: () => performAction(world, witness.id, 'Tell', { targetId: actorId, claim }, { causedBy: event.id }),
+        action: (why) => performAction(world, witness.id, 'Tell', { targetId: actorId, claim }, { causedBy: event.id, why }),
         label: `press ${actorId} for an explanation`,
-        score: (-appraisal.impact) * 0.4 * priorAffection + priorTrust * 0.2,
+        score: Object.values(pressTerms).reduce((a, b) => a + b, 0),
+        terms: pressTerms,
       });
     }
   }
@@ -757,35 +943,58 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
     const predicate = event.verb === 'Attack' ? 'attacked' : 'stole_from';
     const claim = { predicate, subject, victim: event.data.targetId, item: event.data.item };
     const generalCare = generalCareOf(witness);
+    // Liking the actor makes you less eager to go gossip about them behind their
+    // back. Going and finding someone to talk to is itself a social act — an
+    // introvert is less drawn to it regardless of how they feel about the actor —
+    // and someone who values Autonomy would rather handle it themselves than pull
+    // a third party in. The impact-scaled base term isn't attributed to a named
+    // lever below — it's how bad the event was, the same for every witness.
+    const gossipTerms = {
+      generalCare: generalCare * 0.2,
+      affection: -priorAffection * 0.3,
+      extraversion: -(0.5 - extraversion) * 0.3,
+      Autonomy: -getValueWeight(witness, 'Autonomy') * 0.15,
+    };
+    const gossipScore = (-appraisal.impact) * 0.5 + Object.values(gossipTerms).reduce((a, b) => a + b, 0);
     candidates.push({
-      action: () => performAction(world, witness.id, 'Tell', { targetId: confidant, claim }, { causedBy: event.id }),
+      action: (why) => performAction(world, witness.id, 'Tell', { targetId: confidant, claim }, { causedBy: event.id, why }),
       label: `tell ${confidant} about ${actorId}${truthful ? '' : ' (misattributed)'}`,
-      // Liking the actor makes you less eager to go gossip about them behind their back.
-      score: (-appraisal.impact) * 0.5 + generalCare * 0.2 - priorAffection * 0.3,
+      score: gossipScore,
+      terms: gossipTerms,
     });
   }
 
   const fearEmotion = activeEmotionIntensity(witness, 'Fear', actorId, event.tick);
   if (rel.fear > 0.3 || witness.mind.needs.safety < 0.7 || fearEmotion > 0.2) {
-    const retreatScore = (rel.fear * 0.6 + (1 - witness.mind.needs.safety) * 0.3 + fearEmotion * 0.3) * (1 - boldness);
+    // Valuing Safety highly makes the pull to get away from danger stronger on top
+    // of how scared the witness actually is right now.
+    const retreatTerms = {
+      fear: (rel.fear * 0.6 + fearEmotion * 0.3) * (1 - boldness),
+      'low safety': (1 - witness.mind.needs.safety) * 0.3 * (1 - boldness),
+      Safety: getValueWeight(witness, 'Safety') * 0.15,
+    };
+    const retreatScore = Object.values(retreatTerms).reduce((a, b) => a + b, 0);
     candidates.push({
-      action: () => performAction(world, witness.id, 'Move', { toLocation: 'away' }, { causedBy: event.id }),
+      action: (why) => performAction(world, witness.id, 'Move', { toLocation: 'away' }, { causedBy: event.id, why }),
       label: 'retreat',
       score: retreatScore,
+      terms: retreatTerms,
     });
   }
 
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates[0];
+  const why = explainTerms(best.terms);
 
   witness.mind.log.push({
     tick: event.tick,
     trigger: `ev#${event.id} ${event.verb} by ${actorId}`,
     considered: candidates.map(c => `${c.label}=${c.score.toFixed(2)}`),
     chose: best.label,
+    why,
   });
 
-  if (best.action) best.action();
+  if (best.action) best.action(why);
 }
 
 function pickConfidant(world, witness, excludeId, excludeVictimId) {

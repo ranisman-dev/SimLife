@@ -37,7 +37,8 @@ function renderLog() {
   logPanel.innerHTML = world.events.slice().reverse().map(ev => {
     const actor = Sim.getAgent(world, ev.actor).name;
     const causedTag = ev.causedBy ? `<span class="caused-by">↳ reaction to #${ev.causedBy}</span>` : '';
-    return `<div class="log-entry"><span class="log-id">#${ev.id}</span> <strong>${actor}</strong> ${describeEvent(ev)} ${causedTag}</div>`;
+    const whyTag = ev.why ? `<span class="why-tag">— due to ${ev.why}</span>` : '';
+    return `<div class="log-entry"><span class="log-id">#${ev.id}</span> <strong>${actor}</strong> ${describeEvent(ev)} ${whyTag} ${causedTag}</div>`;
   }).join('') || '<p class="empty">Nothing has happened yet.</p>';
 }
 
@@ -103,7 +104,7 @@ function renderMind() {
   const goalsFuture = m.goals.future.map(goalItem).join('') || '<li class="empty">None yet.</li>';
 
   const decisionLog = m.log.slice().reverse().slice(0, 6).map(d => `
-    <li><em>${d.trigger}</em><br>considered: ${d.considered.join(', ')}<br>chose: <strong>${d.chose}</strong></li>
+    <li><em>${d.trigger}</em><br>considered: ${d.considered.join(', ')}<br>chose: <strong>${d.chose}</strong>${d.why ? ` <span class="why-tag">— due to ${d.why}</span>` : ''}</li>
   `).join('') || '<li class="empty">No decisions made yet.</li>';
 
   panel.innerHTML = `
@@ -142,7 +143,8 @@ function buildDebugReport() {
   lines.push(`=== EVENT LOG (${world.events.length}) ===`);
   world.events.forEach(ev => {
     const actor = Sim.getAgent(world, ev.actor).name;
-    lines.push(`#${ev.id} [tick ${ev.tick}] ${actor} ${describeEvent(ev)}${ev.causedBy ? ` (reaction to #${ev.causedBy})` : ''}`);
+    const whySuffix = ev.why ? ` — due to ${ev.why}` : '';
+    lines.push(`#${ev.id} [tick ${ev.tick}] ${actor} ${describeEvent(ev)}${whySuffix}${ev.causedBy ? ` (reaction to #${ev.causedBy})` : ''}`);
   });
 
   Object.values(world.agents).forEach(a => {
@@ -192,7 +194,8 @@ function buildDebugReport() {
 
     lines.push(`decision log (${m.log.length}):`);
     m.log.forEach(d => {
-      lines.push(`  - tick ${d.tick} | ${d.trigger} | considered: ${d.considered.join(', ') || '(n/a)'} | chose: ${d.chose}`);
+      const whySuffix = d.why ? ` | why: ${d.why}` : '';
+      lines.push(`  - tick ${d.tick} | ${d.trigger} | considered: ${d.considered.join(', ') || '(n/a)'} | chose: ${d.chose}${whySuffix}`);
     });
   });
 

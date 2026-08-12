@@ -168,6 +168,7 @@ select, input[type="number"] {
 
 .log-id { color: #6b6960; margin-right: 0.4rem; }
 .caused-by { color: #6b6960; font-size: 0.8rem; margin-left: 0.4rem; }
+.why-tag { color: #8fb4ff; font-size: 0.8rem; margin-left: 0.4rem; }
 
 .mind-panel { font-size: 0.88rem; }
 .mind-panel h3 { margin-top: 0; }
