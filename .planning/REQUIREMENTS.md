@@ -105,38 +105,36 @@ changing under pressure, plus closing the gaps that currently undercut it.)*
 
 ## Traceability
 
-Populated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| VERIF-01 | TBD | Pending |
-| VERIF-02 | TBD | Pending |
-| VERIF-03 | TBD | Pending |
-| ORDER-01 | TBD | Pending |
-| ORDER-02 | TBD | Pending |
-| DECAY-01 | TBD | Pending |
-| DECAY-02 | TBD | Pending |
-| DECAY-03 | TBD | Pending |
-| DECAY-04 | TBD | Pending |
-| DECAY-05 | TBD | Pending |
-| MEMORY-01 | TBD | Pending |
-| MEMORY-02 | TBD | Pending |
-| DRIFT-01 | TBD | Pending |
-| DRIFT-02 | TBD | Pending |
-| DRIFT-03 | TBD | Pending |
-| DRIFT-04 | TBD | Pending |
-| SNAP-01 | TBD | Pending |
-| SNAP-02 | TBD | Pending |
-| SNAP-03 | TBD | Pending |
-| TRIGGER-01 | TBD | Pending |
-| TRIGGER-02 | TBD | Pending |
-| TRIGGER-03 | TBD | Pending |
+| VERIF-01 | Phase 1 | Pending |
+| VERIF-02 | Phase 1 | Pending |
+| VERIF-03 | Phase 1 | Pending |
+| ORDER-01 | Phase 2 | Pending |
+| ORDER-02 | Phase 2 | Pending |
+| DECAY-01 | Phase 3 | Pending |
+| DECAY-02 | Phase 3 | Pending |
+| DECAY-03 | Phase 3 | Pending |
+| DECAY-04 | Phase 3 | Pending |
+| DECAY-05 | Phase 3 | Pending |
+| MEMORY-01 | Phase 4 | Pending |
+| MEMORY-02 | Phase 4 | Pending |
+| DRIFT-01 | Phase 5 | Pending |
+| DRIFT-02 | Phase 5 | Pending |
+| DRIFT-03 | Phase 5 | Pending |
+| DRIFT-04 | Phase 5 | Pending |
+| SNAP-01 | Phase 6 | Pending |
+| SNAP-02 | Phase 6 | Pending |
+| SNAP-03 | Phase 6 | Pending |
+| TRIGGER-01 | Phase 7 | Pending |
+| TRIGGER-02 | Phase 7 | Pending |
+| TRIGGER-03 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 22 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 22 ⚠️
+- Mapped to phases: 22
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-08-12*
-*Last updated: 2026-08-12 after initial definition*
+*Last updated: 2026-08-12 after roadmap creation (7 phases, full v1 coverage)*
