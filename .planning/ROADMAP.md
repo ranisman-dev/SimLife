@@ -57,7 +57,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — Regression harness in `sim.js`: scenario-scoped snapshotting, snapshot diffing with human-readable formatting, and `Sim.runRegressionCheck()` reproducing the two-clone `CompetitiveJungle` case
+- [x] 01-02-PLAN.md — Regression harness in `sim.js`: scenario-scoped snapshotting, snapshot diffing with human-readable formatting, and `Sim.runRegressionCheck()` reproducing the two-clone `CompetitiveJungle` case
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -158,7 +158,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
-| 1. Verification Infrastructure | 1/3 | In Progress|  |
+| 1. Verification Infrastructure | 2/3 | In Progress|  |
 | 2. Witness Reaction Ordering | 0/1 | Not started | - |
 | 3. Belief Decay & Needs Regeneration | 0/1 | Not started | - |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
