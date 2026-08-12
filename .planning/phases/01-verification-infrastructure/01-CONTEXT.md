@@ -43,9 +43,10 @@ on — it delivers no new NPC-visible behavior itself.
   with no argument uses a hardcoded default constant (always reproducible for
   the regression check); passing an explicit seed lets other sessions explore
   different random outcomes.
-- **D-05 — LOCKED, CROSS-PHASE (binds Phases 5-7, not just Phase 1): RNG scope
-  discipline.** The only RNG permitted to decide something *important* is a
-  one-time world/people genesis roll — not applicable today since
+- **D-05 [locked]:** RNG scope discipline — LOCKED, CROSS-PHASE (binds Phases
+  5-7, not just Phase 1). The only RNG permitted to decide something
+  *important* is a one-time world/people genesis roll — not applicable today
+  since
   `createWorld()` hand-authors all 5 NPCs deterministically, but this is the
   standing rule for if/when procedural world/NPC generation is built in a
   future milestone (see Deferred Ideas). After genesis, everything is
@@ -79,9 +80,10 @@ on — it delivers no new NPC-visible behavior itself.
 - **D-08:** "Byte-for-bit" reproduction (VERIF-01) means a full snapshot diff,
   not looser targeted assertions — most rigorous option, catches subtle
   unintended side effects introduced by later phases.
-- **D-09 — LOCKED, reused as the standard pattern for every later phase's
-  scripted-scenario baseline (Phase 2's witness-ordering diff explicitly needs
-  this too, per `ROADMAP.md`):**
+- **D-09 [locked]:** Regression-check strictness pattern — LOCKED, reused as
+  the standard pattern for every later phase's scripted-scenario baseline
+  (Phase 2's witness-ordering diff explicitly needs this too, per
+  `ROADMAP.md`):
   1. **Scope the snapshot to the agents actually involved in/witnessing the
      tested scenario, plus the event log — not hardcoded to exactly 2 agents.**
      The user explicitly rejected assuming a fixed pair; a future scenario
