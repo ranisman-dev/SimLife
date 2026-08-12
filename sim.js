@@ -1169,6 +1169,72 @@ function snapshotWorld(world, agentIds) {
   return JSON.parse(JSON.stringify(raw, (key, value) => (value instanceof Set ? Array.from(value) : value)));
 }
 
+function isContainer(v) { return v !== null && typeof v === 'object'; }
+
+// Two values recurse together only when they're containers of the same
+// shape (both arrays, or both plain objects) — a leaf, null, or a
+// container-vs-leaf mismatch all fall through to a direct !== comparison
+// instead.
+function sameContainerType(a, b) { return isContainer(a) && isContainer(b) && Array.isArray(a) === Array.isArray(b); }
+
+function containerHasKey(container, key) {
+  return Array.isArray(container) ? key < container.length : Object.prototype.hasOwnProperty.call(container, key);
+}
+
+// Sorted key order for objects (deterministic traversal, D-09.3); numeric
+// index range for arrays, sized to the longer of the two sides so a
+// length change surfaces as addition/removal entries at the tail.
+function containerKeys(a, b) {
+  if (Array.isArray(a)) {
+    const len = Math.max(a.length, b.length);
+    const keys = [];
+    for (let i = 0; i < len; i++) keys.push(i);
+    return keys;
+  }
+  return Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).sort();
+}
+
+// Walks two snapshots (or any two plain JSON-shaped values) and returns one
+// { path, from, to } entry per differing leaf, path being the dot-joined key
+// path from the root (array indices as numeric segments). Recurses through
+// plain objects/arrays; a key present on only one side reports an
+// addition/removal at that path without recursing into whichever side
+// actually has a subtree there. Deterministic: sorted key order at every
+// level, so the same pair of snapshots always yields the same diff array.
+function diffSnapshots(before, after) {
+  const diffs = [];
+  (function walk(a, b, path) {
+    if (sameContainerType(a, b)) {
+      containerKeys(a, b).forEach(key => {
+        const aHas = containerHasKey(a, key);
+        const bHas = containerHasKey(b, key);
+        const childPath = path === '' ? `${key}` : `${path}.${key}`;
+        if (aHas && bHas) {
+          walk(a[key], b[key], childPath);
+        } else if (aHas) {
+          diffs.push({ path: childPath, from: a[key], to: undefined });
+        } else {
+          diffs.push({ path: childPath, from: undefined, to: b[key] });
+        }
+      });
+      return;
+    }
+    if (a !== b) diffs.push({ path, from: a, to: b });
+  })(before, after, '');
+  return diffs;
+}
+
+// Renders a diff array as human-readable, field-by-field lines — never
+// prints, only returns (D-01: the same code backs both the Node script and
+// the browser dev console, so all printing belongs to the caller). Uses the
+// ASCII "->" arrow, never the Unicode arrow, so the output survives Windows
+// terminal code pages.
+function formatDiff(diffs) {
+  if (diffs.length === 0) return 'no differences';
+  const render = (v) => (v === undefined ? '(absent)' : (isContainer(v) ? JSON.stringify(v) : String(v)));
+  return diffs.map(d => `  ${d.path}: ${render(d.from)} -> ${render(d.to)}`).join('\n');
+}
+
 // ── Public API ──────────────────────────────────────────────
 
 const Sim = {
@@ -1187,6 +1253,8 @@ const Sim = {
   memoryStrength,
   scenarioParticipants,
   snapshotWorld,
+  diffSnapshots,
+  formatDiff,
 };
 
 if (typeof window !== 'undefined') window.Sim = Sim;
