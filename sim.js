@@ -41,6 +41,15 @@ const PREDICATE_LABELS = {
 
 const EMOTION_HALFLIFE_TICKS = 6;
 
+// Single shared home for every new tuning number Phases 2-7 introduce
+// (thresholds, rates, decay constants) — one named block, not split per
+// mechanic, per D-06. Deliberately ships empty this phase: Phase 1 adds
+// verification infrastructure only and introduces no NPC-visible behavior of
+// its own to tune. Pre-existing constants (MAX_REACTION_DEPTH,
+// EMOTION_HALFLIFE_TICKS) are explicitly NOT retrofitted in here per D-07 —
+// they stay exactly where they already are.
+const TUNING = {};
+
 function makeAgent(id, name, opts = {}) {
   const isPlayer = !!opts.isPlayer;
   return {
@@ -179,6 +188,20 @@ function coLocated(world, aId, bId) {
 function agentsAt(world, locationId, excludeId) {
   return Object.values(world.agents).filter(a => a.location === locationId && a.id !== excludeId && a.alive);
 }
+
+// world.driftEnabled reads as enabled whenever the field is absent. Two
+// reasons this is exactly this shape, deliberately, not an oversight:
+// 1. createWorld() is left completely untouched per D-02 — it does not gain
+//    a driftEnabled field, so an unseeded world reads undefined, which must
+//    mean "enabled".
+// 2. The `!== false` comparison is load-bearing. A truthiness fallback on
+//    this field (something shaped like `field || true`) would silently
+//    coerce an explicit false back to enabled — the same failure class as
+//    the `params.quantity || 1` Known Bug documented in
+//    .planning/codebase/CONCERNS.md. Every future read of this flag
+//    (including Phase 5's actual drift mechanic) must go through this
+//    accessor, never through a raw truthiness test on the field.
+function isDriftEnabled(world) { return world.driftEnabled !== false; }
 
 // ── Action pipeline (player and NPCs both funnel through this) ──
 
@@ -1034,6 +1057,8 @@ const Sim = {
   VALUES,
   WORLDVIEW_BELIEFS,
   PREDICATE_LABELS,
+  TUNING,
+  isDriftEnabled,
   createWorld,
   performAction,
   getAgent,
