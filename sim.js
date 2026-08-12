@@ -50,6 +50,12 @@ const EMOTION_HALFLIFE_TICKS = 6;
 // they stay exactly where they already are.
 const TUNING = {};
 
+// The always-reproducible seed seedRng() uses when no explicit seed is
+// passed — what the regression check (Plan 02) relies on for a fixed
+// baseline. Not a Phase 2 tuning number (D-04) — deliberately kept out of
+// TUNING above.
+const DEFAULT_SEED = 1337;
+
 function makeAgent(id, name, opts = {}) {
   const isPlayer = !!opts.isPlayer;
   return {
@@ -202,6 +208,55 @@ function agentsAt(world, locationId, excludeId) {
 //    (including Phase 5's actual drift mechanic) must go through this
 //    accessor, never through a raw truthiness test on the field.
 function isDriftEnabled(world) { return world.driftEnabled !== false; }
+
+// Seeded PRNG stream — mulberry32, copied verbatim from the driver-script
+// convention already documented in .planning/codebase/TESTING.md:31-38. Any
+// deterministic, swappable generator satisfies VERIF-02; no reason to
+// reinvent one here.
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// LOCKED cross-phase RNG scope discipline (D-05), binding Phases 5-7: the
+// only randomness permitted through this stream is stochastic texture on the
+// details of an already-decided action — currently exactly three sites
+// (Attack damage magnitude, the gossip honest-vs-lying flip, and scapegoat
+// selection). RNG must never decide *what* an NPC does; decideAndAct()'s
+// utility-AI scoring is and must remain fully deterministic. Phase 6's snap
+// threshold and Phase 7's reactivation matching must be deterministic
+// functions of context, never probabilistic rolls.
+//
+// Always (re)seeds — deliberately does NOT copy relOf's lazy-init guard
+// (`if (!agent.mind.relationships[id])`); a second seedRng(world, otherSeed)
+// call must genuinely re-seed, not silently no-op. RNG state lives entirely
+// on `world`, never as a module-level `let` — reactionDepth (below) is the
+// one existing module-global and is flagged fragile in
+// .planning/codebase/CONCERNS.md; this must not add a second instance of
+// that problem (D-03's explicit rationale).
+function seedRng(world, seed = DEFAULT_SEED) {
+  world.seed = seed; // plain number — survives JSON.stringify into a snapshot
+  world.rngCalls = 0;
+  const draw = mulberry32(seed);
+  world.rng = function () {
+    world.rngCalls++;
+    return draw();
+  };
+  return world;
+}
+
+// Defensive accessor so the engine can never throw on a world that was built
+// without an explicit seedRng call (e.g. an existing ad hoc node -e driver
+// script). Falls back to DEFAULT_SEED as a safety net only — real entry
+// points seed explicitly via seedRng.
+function rngOf(world) {
+  if (!world.rng) seedRng(world);
+  return world.rng;
+}
 
 // ── Action pipeline (player and NPCs both funnel through this) ──
 
@@ -1059,6 +1114,8 @@ const Sim = {
   PREDICATE_LABELS,
   TUNING,
   isDriftEnabled,
+  DEFAULT_SEED,
+  seedRng,
   createWorld,
   performAction,
   getAgent,
