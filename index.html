@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Tiny Town — simulation architecture prototype</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Tiny Town</h1>
+    <p class="subtitle">
+      A prototype for a "beliefs, not scripts" simulation architecture: 5 NPCs, one location, five generic
+      verbs (Take, Give, Attack, Tell, Move). Every action — yours or theirs — runs through the same
+      perceive → believe → decide → act pipeline. Nothing here is scripted per-scenario.
+    </p>
+    <button id="reset-btn" type="button">Reset town</button>
+  </header>
+
+  <main class="layout">
+    <section class="panel">
+      <h2>Town Square <span class="tick-label">tick <span id="tick">0</span></span></h2>
+      <div id="world-panel" class="world-panel"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Say what you do</h2>
+      <form id="command-form">
+        <input id="command-input" type="text" autocomplete="off" placeholder="take bread from mara" />
+        <button type="submit">Do it</button>
+      </form>
+      <p id="action-result" class="action-result"></p>
+      <p class="hint">Try, or click:</p>
+      <ul id="example-list" class="example-list"></ul>
+    </section>
+
+    <section class="panel">
+      <h2>Event log</h2>
+      <div id="log-panel" class="log-panel"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Inspect a mind</h2>
+      <div id="mind-panel" class="mind-panel"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Debug report</h2>
+      <p class="hint">If something looks wrong, generate a full dump of the event log and every NPC's complete mind (untruncated) — paste it back to Claude.</p>
+      <button id="generate-report-btn" type="button">Generate report</button>
+      <p id="copy-status" class="action-result"></p>
+      <textarea id="debug-output" class="debug-output" readonly style="display:none;"></textarea>
+    </section>
+  </main>
+</div>
+
+<script src="sim.js"></script>
+<script src="parser.js"></script>
+<script src="presentation.js"></script>
+</body>
+</html>
