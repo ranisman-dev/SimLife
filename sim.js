@@ -41,6 +41,21 @@ const PREDICATE_LABELS = {
 
 const EMOTION_HALFLIFE_TICKS = 6;
 
+// Single shared home for every new tuning number Phases 2-7 introduce
+// (thresholds, rates, decay constants) — one named block, not split per
+// mechanic, per D-06. Deliberately ships empty this phase: Phase 1 adds
+// verification infrastructure only and introduces no NPC-visible behavior of
+// its own to tune. Pre-existing constants (MAX_REACTION_DEPTH,
+// EMOTION_HALFLIFE_TICKS) are explicitly NOT retrofitted in here per D-07 —
+// they stay exactly where they already are.
+const TUNING = {};
+
+// The always-reproducible seed seedRng() uses when no explicit seed is
+// passed — what the regression check (Plan 02) relies on for a fixed
+// baseline. Not a Phase 2 tuning number (D-04) — deliberately kept out of
+// TUNING above.
+const DEFAULT_SEED = 1337;
+
 function makeAgent(id, name, opts = {}) {
   const isPlayer = !!opts.isPlayer;
   return {
@@ -180,6 +195,69 @@ function agentsAt(world, locationId, excludeId) {
   return Object.values(world.agents).filter(a => a.location === locationId && a.id !== excludeId && a.alive);
 }
 
+// world.driftEnabled reads as enabled whenever the field is absent. Two
+// reasons this is exactly this shape, deliberately, not an oversight:
+// 1. createWorld() is left completely untouched per D-02 — it does not gain
+//    a driftEnabled field, so an unseeded world reads undefined, which must
+//    mean "enabled".
+// 2. The `!== false` comparison is load-bearing. A truthiness fallback on
+//    this field (something shaped like `field || true`) would silently
+//    coerce an explicit false back to enabled — the same failure class as
+//    the `params.quantity || 1` Known Bug documented in
+//    .planning/codebase/CONCERNS.md. Every future read of this flag
+//    (including Phase 5's actual drift mechanic) must go through this
+//    accessor, never through a raw truthiness test on the field.
+function isDriftEnabled(world) { return world.driftEnabled !== false; }
+
+// Seeded PRNG stream — mulberry32, copied verbatim from the driver-script
+// convention already documented in .planning/codebase/TESTING.md:31-38. Any
+// deterministic, swappable generator satisfies VERIF-02; no reason to
+// reinvent one here.
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// LOCKED cross-phase RNG scope discipline (D-05), binding Phases 5-7: the
+// only randomness permitted through this stream is stochastic texture on the
+// details of an already-decided action — currently exactly three sites
+// (Attack damage magnitude, the gossip honest-vs-lying flip, and scapegoat
+// selection). RNG must never decide *what* an NPC does; decideAndAct()'s
+// utility-AI scoring is and must remain fully deterministic. Phase 6's snap
+// threshold and Phase 7's reactivation matching must be deterministic
+// functions of context, never probabilistic rolls.
+//
+// Always (re)seeds — deliberately does NOT copy relOf's lazy-init guard
+// (`if (!agent.mind.relationships[id])`); a second seedRng(world, otherSeed)
+// call must genuinely re-seed, not silently no-op. RNG state lives entirely
+// on `world`, never as a module-level `let` — reactionDepth (below) is the
+// one existing module-global and is flagged fragile in
+// .planning/codebase/CONCERNS.md; this must not add a second instance of
+// that problem (D-03's explicit rationale).
+function seedRng(world, seed = DEFAULT_SEED) {
+  world.seed = seed; // plain number — survives JSON.stringify into a snapshot
+  world.rngCalls = 0;
+  const draw = mulberry32(seed);
+  world.rng = function () {
+    world.rngCalls++;
+    return draw();
+  };
+  return world;
+}
+
+// Defensive accessor so the engine can never throw on a world that was built
+// without an explicit seedRng call (e.g. an existing ad hoc node -e driver
+// script). Falls back to DEFAULT_SEED as a safety net only — real entry
+// points seed explicitly via seedRng.
+function rngOf(world) {
+  if (!world.rng) seedRng(world);
+  return world.rng;
+}
+
 // ── Action pipeline (player and NPCs both funnel through this) ──
 
 let reactionDepth = 0;
@@ -275,7 +353,7 @@ function applyEffects(world, actor, verb, params) {
     }
     case 'Attack': {
       const target = getAgent(world, params.targetId);
-      const damage = 15 + Math.floor(Math.random() * 15);
+      const damage = 15 + Math.floor(rngOf(world)() * 15);
       target.health = Math.max(0, target.health - damage);
       if (target.health === 0) target.alive = false;
       if (!target.isPlayer) adjustNeed(target, 'safety', -0.4);
@@ -938,7 +1016,7 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
   const confidant = pickConfidant(world, witness, actorId, event.data.targetId);
   if (confidant && !believesDead(witness, confidant)) {
     const honestyWeight = getValueWeight(witness, 'Honesty');
-    const truthful = Math.random() < clamp(0.5 + honestyWeight * 0.45, 0.05, 0.97);
+    const truthful = rngOf(world)() < clamp(0.5 + honestyWeight * 0.45, 0.05, 0.97);
     const subject = truthful ? actorId : pickScapegoat(world, witness, actorId, event.data.targetId);
     const predicate = event.verb === 'Attack' ? 'attacked' : 'stole_from';
     const claim = { predicate, subject, victim: event.data.targetId, item: event.data.item };
@@ -1016,7 +1094,7 @@ function pickScapegoat(world, witness, actualActorId, victimId) {
     return clamp(1.2 - rel.affection - rel.trust * 0.5, 0.1, 3);
   });
   const total = weights.reduce((a, b) => a + b, 0);
-  let roll = Math.random() * total;
+  let roll = rngOf(world)() * total;
   for (let i = 0; i < others.length; i++) {
     roll -= weights[i];
     if (roll <= 0) return others[i];
@@ -1034,6 +1112,10 @@ const Sim = {
   VALUES,
   WORLDVIEW_BELIEFS,
   PREDICATE_LABELS,
+  TUNING,
+  isDriftEnabled,
+  DEFAULT_SEED,
+  seedRng,
   createWorld,
   performAction,
   getAgent,

@@ -4,6 +4,7 @@
 // mutates world state directly.
 
 let world = Sim.createWorld();
+Sim.seedRng(world, Date.now());
 let inspectedId = 'mara';
 
 const el = (id) => document.getElementById(id);
@@ -264,6 +265,7 @@ function init() {
   el('command-form').addEventListener('submit', submitCommand);
   el('reset-btn').addEventListener('click', () => {
     world = Sim.createWorld();
+    Sim.seedRng(world, Date.now());
     el('action-result').textContent = '';
     el('debug-output').style.display = 'none';
     el('debug-output').value = '';
