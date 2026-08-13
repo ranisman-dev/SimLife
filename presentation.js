@@ -61,8 +61,8 @@ function renderMind() {
   if (!agent || agent.isPlayer) { panel.innerHTML = '<p class="empty">Select an NPC to inspect.</p>'; return; }
   const m = agent.mind;
 
-  const personality = Object.entries(m.personality).map(([trait, v]) =>
-    `<li><strong>${trait}</strong> <span class="bar"><span class="bar-fill" style="width:${Math.round(v * 100)}%"></span></span> ${v.toFixed(2)}</li>`
+  const personality = Object.entries(m.personality).map(([trait, score]) =>
+    `<li><strong>${trait}</strong> <span class="bar"><span class="bar-fill" style="width:${Math.round(score * 100)}%"></span></span> ${score.toFixed(2)}</li>`
   ).join('');
 
   const values = m.values.length
@@ -73,9 +73,7 @@ function renderMind() {
     ? m.worldview.map(w => `<li><strong>${w.belief}</strong> ${w.weight >= 0 ? '+' : ''}${w.weight.toFixed(2)}</li>`).join('')
     : '<li class="empty">No strong convictions either way — not the same as holding the opposite view.</li>';
 
-  const needs = Object.entries(m.needs).map(([need, v]) =>
-    `<li><strong>${need}</strong> <span class="bar"><span class="bar-fill" style="width:${Math.round(v * 100)}%"></span></span> ${v.toFixed(2)}</li>`
-  ).join('');
+  const needs = Object.entries(m.needs).map(([need]) => { const live = Sim.needValue(agent, need, world.tick); return `<li><strong>${need}</strong> <span class="bar"><span class="bar-fill" style="width:${Math.round(live * 100)}%"></span></span> ${live.toFixed(2)}</li>`; }).join('');
 
   const emotions = m.emotions.slice().reverse().slice(0, 8).map(e => {
     const targetName = world.agents[e.target] ? world.agents[e.target].name : e.target;
@@ -84,7 +82,7 @@ function renderMind() {
   }).join('') || '<li class="empty">No active feelings.</li>';
 
   const beliefs = m.beliefs.slice().reverse().slice(0, 10).map(b => `
-    <li><span class="belief-conf">${Math.round(b.confidence * 100)}%</span>
+    <li><span class="belief-conf">${Math.round(Sim.beliefConfidence(b, world.tick) * 100)}%</span>
       ${b.predicate.startsWith('did:') ? `believes ${b.subject} performed ${b.predicate.slice(4)} (#${b.eventId})` : Sim.PREDICATE_LABELS[b.predicate] ? Sim.PREDICATE_LABELS[b.predicate](b.data) : `${b.subject} ${b.predicate}`}
       <span class="belief-source">via ${b.source}${b.contested ? ' — disputed by a competing account' : ''}</span>
     </li>`).join('') || '<li class="empty">No beliefs yet.</li>';
@@ -158,10 +156,10 @@ function buildDebugReport() {
     const m = a.mind;
     lines.push(`=== ${a.name} — full mind ===`);
     lines.push(`location: ${a.location} | hp: ${a.health} (${a.alive ? 'alive' : 'down'}) | bread ${a.inventory.bread}, gold ${a.inventory.gold}`);
-    lines.push(`personality: ${Object.entries(m.personality).map(([k, v]) => `${k}=${v.toFixed(2)}`).join(', ')}`);
+    lines.push(`personality: ${Object.entries(m.personality).map(([k, score]) => `${k}=${score.toFixed(2)}`).join(', ')}`);
     lines.push(`values: ${m.values.length ? m.values.map(v => `${v.value}=${v.weight >= 0 ? '+' : ''}${v.weight.toFixed(2)}`).join(', ') : '(none)'}`);
     lines.push(`worldview: ${m.worldview.length ? m.worldview.map(w => `${w.belief}=${w.weight >= 0 ? '+' : ''}${w.weight.toFixed(2)}`).join(', ') : '(none)'}`);
-    lines.push(`needs: ${Object.entries(m.needs).map(([k, v]) => `${k}=${v.toFixed(2)}`).join(', ')}`);
+    lines.push(`needs: ${Object.entries(m.needs).map(([k]) => `${k}=${Sim.needValue(a, k, world.tick).toFixed(2)}`).join(', ')}`);
 
     const liveEmotions = m.emotions.map(e => {
       const eff = e.intensity * Math.pow(0.5, (world.tick - e.tick) / 6);
@@ -175,7 +173,7 @@ function buildDebugReport() {
       const label = b.predicate.startsWith('did:')
         ? `believes ${b.subject} performed ${b.predicate.slice(4)} (#${b.eventId})`
         : (Sim.PREDICATE_LABELS[b.predicate] ? Sim.PREDICATE_LABELS[b.predicate](b.data) : `${b.subject} ${b.predicate}`);
-      lines.push(`  - [${Math.round(b.confidence * 100)}%] ${label} — via ${b.source}, tick ${b.tick}${b.contested ? ' [disputed by a competing account]' : ''}`);
+      lines.push(`  - [${Math.round(Sim.beliefConfidence(b, world.tick) * 100)}%] ${label} — via ${b.source}, tick ${b.tick}${b.contested ? ' [disputed by a competing account]' : ''} (stored confidence=${b.confidence.toFixed(2)}, formed tick ${b.tick})`);
     });
 
     lines.push(`memories (${m.memories.length}):`);
