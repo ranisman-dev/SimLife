@@ -17,7 +17,11 @@
           "targetSurvived": true
         },
         "causedBy": null,
-        "why": null
+        "why": null,
+        "witnessOrder": [
+          "mara",
+          "ives"
+        ]
       },
       {
         "id": 2,
@@ -34,7 +38,11 @@
           }
         },
         "causedBy": 1,
-        "why": "affection + generalCare"
+        "why": "affection + generalCare",
+        "witnessOrder": [
+          "player",
+          "ives"
+        ]
       },
       {
         "id": 3,
@@ -48,7 +56,11 @@
           "targetSurvived": true
         },
         "causedBy": 1,
-        "why": "CompetitiveJungle + boldness"
+        "why": "CompetitiveJungle + boldness",
+        "witnessOrder": [
+          "player",
+          "mara"
+        ]
       },
       {
         "id": 4,
@@ -65,7 +77,11 @@
           }
         },
         "causedBy": 3,
-        "why": "conscientiousness + trust + affection"
+        "why": "conscientiousness + trust + affection",
+        "witnessOrder": [
+          "player",
+          "ives"
+        ]
       }
     ],
     "agents": {
@@ -475,7 +491,11 @@
           "targetSurvived": true
         },
         "causedBy": null,
-        "why": null
+        "why": null,
+        "witnessOrder": [
+          "mara",
+          "ives"
+        ]
       },
       {
         "id": 2,
@@ -492,7 +512,11 @@
           }
         },
         "causedBy": 1,
-        "why": "affection + generalCare"
+        "why": "affection + generalCare",
+        "witnessOrder": [
+          "player",
+          "ives"
+        ]
       }
     ],
     "agents": {

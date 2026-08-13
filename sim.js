@@ -285,6 +285,14 @@ function performAction(world, actorId, verb, params = {}, opts = {}) {
   world.events.push(event);
 
   const witnesses = computeWitnesses(world, event);
+  // Provenance only, same family as event.causedBy/event.why: a readable record of
+  // dispatch order for display/inspection, never read back into any scoring,
+  // precondition, or belief path. In this plan it is exactly computeWitnesses's
+  // agent-list order (a copy via .slice(), not the live array reference, so a later
+  // plan that replaces `witnesses` with a reordered array cannot alias this record).
+  // Plan 02-03 replaces the array this copies with an urgency-sorted one — that
+  // substitution is what makes the ORDER-02 before/after diff a single readable line.
+  event.witnessOrder = witnesses.slice();
   witnesses.forEach(w => perceiveEvent(world, w, event));
 
   return { success: true, event };
