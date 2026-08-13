@@ -20,6 +20,33 @@ axis that Neuroticism alone didn't cleanly cover — the one sanctioned
 addition beyond the Big Five, per "add a trait only when the sim
 demonstrates a need."
 
+**Hooks** (where each trait is actually read — worth listing explicitly
+because until this pass, three of six sat declared per-NPC and read by
+nothing):
+
+- **`boldness`** — confront/retreat weighting throughout `decideAndAct()`
+  (Attack score, retreat score, and the do-nothing baseline all read it), and
+  gates whether a dormant `SeekRestitution` goal stays suppressed by fear
+  (`reassessGoals()`).
+- **`agreeableness`** — bystander care (`generalCareOf()`); how much a kind
+  act settles a grievance (`applyAppraisal()`); how much a caught lie actually
+  lands, via the same forgiveness formula (`reactToBeingLiedTo()`); a direct
+  brake on the Attack score and a floor under the do-nothing score
+  (`decideAndAct()`).
+- **`neuroticism`** — how sharply Fear rises from being attacked, and now
+  Anger/Indignation intensity too, both in `applyAppraisal()`.
+- **`extraversion`** — raises the do-nothing baseline for introverts and is
+  subtracted from the gossip (`tell confidant`) score, both in
+  `decideAndAct()`. Added so silence is a reachable outcome for a
+  low-boldness, low-extraversion witness, not just a lower-scored one.
+- **`conscientiousness`** — small boost to `press for explanation` in
+  `decideAndAct()` — wanting the facts straight before reacting further.
+  Also the impulsivity gate in `reactToBeingMisattributed()`: below 0.5, a
+  witness who's just discovered someone else took the blame for their own
+  crime feels relief rather than indifference.
+- **`openness`** — receptiveness to an unconventional `provoked` explanation,
+  alongside `JustWorld`, in `applyClaimBelief()`.
+
 **Known gap:** this is meant to be the "sticky, not static" layer — slow to
 shift, capable of snapping from one intense event. Right now it's just
 static. See "Gaps for the next phase" below.
@@ -32,10 +59,44 @@ the list means indifference, not opposition** — `getValueWeight()` returns
 `0` for anything not present, which is a real default, not a missing value.
 Also never mutated after creation.
 
-Values are what most behavior actually reads, not personality directly:
-Honesty gates lying/scapegoating, Justice scales offense at theft, Wealth
-gates whether restitution reads as "enough," Compassion adds to bystander
-care on top of Agreeableness.
+Values are what most behavior actually reads, not personality directly.
+Wired, as of this pass:
+
+- **Honesty** — gates lying/scapegoating (`decideAndAct()`) and how much a
+  caught lie actually lands (`reactToBeingLiedTo()`).
+- **Justice** — scales offense at theft (`appraiseEvent()`).
+- **Wealth** — gates whether restitution reads as "enough" (`applyAppraisal()`).
+- **Compassion** — adds to bystander care on top of Agreeableness
+  (`generalCareOf()`).
+- **Safety** — scales how impactful being attacked feels, and adds to the pull
+  to retreat (`appraiseEvent()`, `decideAndAct()`).
+- **Loyalty** — discounts belief in a `stole_from`/`attacked` accusation
+  against someone the witness already has affection for (`applyClaimBelief()`)
+  — harder to credit wrongdoing about someone you're loyal to, not because the
+  evidence changed.
+- **Community** — adds to bystander care alongside Compassion — caring about
+  the collective, not just people already liked (`generalCareOf()`).
+- **Status** — boosts the Attack score, but only when someone else is around
+  to see the confrontation (`decideAndAct()`) — public face-saving. Also
+  decides whether being misattributed for your own crime is upsetting or a
+  relief (`reactToBeingMisattributed()`) — above 0.3, you wanted the credit
+  and losing it to someone else stings the same as any other caught lie.
+- **Honor** — boosts the Attack score, but only when the witness is
+  themself the victim (`decideAndAct()`) — defending one's own honor reads
+  differently from punishing a wrong done to someone else, which Justice
+  already covers upstream.
+- **Curiosity** — can unlock `press for explanation` even without existing
+  affection, and adds to its score (`decideAndAct()`) — wanting to know why
+  doesn't require liking someone.
+- **Autonomy** — pulls down the gossip (`tell confidant`) score
+  (`decideAndAct()`) — prefers handling it without pulling a third party in.
+
+**Deliberately left unwired: Tradition, Pleasure.** No honest hook in a
+five-verb sim (Take/Give/Attack/Tell/Move) with no ritual, custom, or
+leisure/consumption mechanic to attach them to. Forcing one in would be
+exactly the kind of scenario-special-casing the architecture's one rule
+prohibits. Same treatment as Superstition gets under Worldview below — named
+and explicitly deferred, not silently ignored.
 
 ## Worldview (`mind.worldview`)
 
@@ -95,14 +156,20 @@ worldview. Shape:
 
 Two formation paths:
 - **Witnessed** (`predicate: 'did:Take'` etc.) — always pushed at 100%
-  confidence for any event the agent personally perceived.
+  confidence for any event the agent personally perceived. **The actor of an
+  event never gets one of these for their own action** — `computeWitnesses()`
+  excludes the actor by construction, so an agent has no belief-array record
+  of things they themselves did. `checkContradiction()`'s ground-truth checks
+  can't rely on the belief array for self-authorship because of this; they
+  check `world.events` directly instead.
 - **Claimed** (`stole_from`, `attacked`, `is_dead`, `is_trustworthy`,
   `is_dangerous`, `provoked`) — confidence starts from trust in the source,
   then can be overridden:
   - to `0`, tagged "known false" in `source`, if `checkContradiction()`
     finds the witness has ground truth against it (self-knowledge about
-    their own actions/what happened to them, or a direct eyewitness record
-    naming someone else as the real actor)
+    their own actions/what happened to them, being the actual — unnamed —
+    perpetrator the claim misattributes to someone else, or a direct
+    eyewitness record naming someone else as the real actor)
   - discounted/boosted by `findConflictingBeliefs()` when it competes with
     an existing belief about the same incident (mutual counter-accusation
     or rival suspects for the same victim) — tagged `contested: true`
@@ -170,9 +237,11 @@ A need that's dropped stays dropped unless one of the above triggers fires.
 ## Emotions (`mind.emotions`)
 
 Transient, decaying, distinct from the slow-changing Relationship numbers:
-`{ emotion, target, intensity, tick }`. Only four types exist —
-`Anger`, `Indignation`, `Fear`, `Gratitude` — all pushed from
-`applyAppraisal()` or `reactToBeingLiedTo()`. Decays live, same pattern as
+`{ emotion, target, intensity, tick }`. Five types exist —
+`Anger`, `Indignation`, `Fear`, `Gratitude`, `Relief` — pushed from
+`applyAppraisal()`, `reactToBeingLiedTo()`, or `reactToBeingMisattributed()`
+(`Relief`: an impulsive witness discovering someone else took the blame for
+their own crime). Decays live, same pattern as
 memory: `intensity × 0.5^((tick - formedTick) / 6)`. Capped at 20 entries
 per agent, oldest dropped first (not decay-based pruning, just a hard cap).
 
@@ -215,6 +284,25 @@ types exist:
   proactive food-seeking behavior — nothing in this prototype gives NPCs an
   idle turn to act on their own goals outside reacting to witnessed events,
   so "created, then resolves when satisfied" is as far as it goes for now.
+
+## Decision provenance (`event.why`, `mind.log[].why`)
+
+`decideAndAct()`'s candidates (do nothing / attack / press for explanation /
+tell confidant / retreat) build their scores from named terms (`{ boldness:
+0.24, CompetitiveJungle: 0.08, ... }`) rather than one opaque expression, and
+sum those terms to get the score actually used for ranking — the breakdown
+and the number that wins are the same computation, not two parallel ones that
+could drift. `explainTerms()` picks the winning candidate's top few terms
+(by absolute contribution, filtering near-zero noise) and joins their labels
+into a short string like `"boldness + Honor + CompetitiveJungle"`. That
+string rides along on the resulting event (`event.why`) and on the decision
+log entry (`mind.log[].why`), surfaced in both the live event log and the
+debug report — "why did Garrick attack the player" now reads as more than a
+raw score list. Purely a display aid: `why` is never read back into any
+scoring or belief logic. Terms with no named lever behind them (an
+impact-scaled base term every candidate shares, reflecting how bad the event
+was rather than who the witness is) are deliberately left out of the
+breakdown.
 
 ## Gaps for the next phase
 
@@ -271,3 +359,7 @@ answers before it's buildable, not during:
   score Move at all (impact stays 0), so a Move memory still always forms
   at the floor. Lower priority than Tell was — nobody's shown a scenario
   yet where which direction someone walked needs to be remembered vividly.
+- **`Tradition` and `Pleasure` values.** Declared per-NPC (Tomas holds
+  Tradition, Ives holds Pleasure), deliberately never wired to any function —
+  see the Values section above for why. Not a bug, a documented deferral,
+  same as Superstition under Worldview.
