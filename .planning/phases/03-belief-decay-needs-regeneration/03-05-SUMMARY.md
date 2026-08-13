@@ -251,3 +251,15 @@ OK
 ---
 *Phase: 03-belief-decay-needs-regeneration*
 *Completed: 2026-08-13*
+
+## Self-Check: PASSED
+
+- FOUND: PERSON-MODEL.md
+- FOUND: CLAUDE.md
+- FOUND: scripts/baseline.json
+- FOUND: scripts/order-baseline.json
+- FOUND: .planning/phases/03-belief-decay-needs-regeneration/03-05-HUMAN-UAT.md
+- FOUND: .planning/phases/03-belief-decay-needs-regeneration/03-05-SUMMARY.md
+- FOUND commit: 5a3d92a (Task 1 -- re-bless)
+- FOUND commit: e4df978 (Task 2 -- doc sync)
+- FOUND commit: ac1bd95 (Task 3 fallback -- HUMAN-UAT + this summary)
