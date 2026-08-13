@@ -1687,10 +1687,65 @@ function runOrderingCheck(opts = {}) {
   const checks = [];
   const result = { pass: true, checks, snapshot };
 
-  // ORDER-01 qualitative checks are deliberately NOT added in this plan —
-  // against pre-fix dispatch they would fail by design and leave
-  // `node scripts/verify.js` permanently red. Plan 02-03 adds them together
-  // with the fix that makes them true.
+  // ORDER-01 qualitative checks, added by Plan 02-03 together with the
+  // orderWitnesses fix that makes them true. Each carries the observed
+  // values verbatim in `detail` so a failure is diagnosable from the
+  // printed line alone, matching runRegressionCheck's convention. Kept
+  // ahead of order-matches-baseline below, which stays last and
+  // never-acknowledgeable.
+
+  // Makes "the fix actually did something" explicit rather than inferred
+  // from a diff: same agent set as agent-list order, different sequence.
+  const sameAgentSet = snapshot.witnessOrder.slice().sort().join(',') === ORDER_SPEC.agentListOrder.slice().sort().join(',');
+  const differsInSequence = snapshot.witnessOrder.join(',') !== ORDER_SPEC.agentListOrder.join(',');
+  checks.push({
+    name: 'dispatch-order-differs-from-agent-list',
+    pass: sameAgentSet && differsInSequence,
+    detail: `dispatch order: ${snapshot.witnessOrder.join(',')} | agent-list order: ${ORDER_SPEC.agentListOrder.join(',')}`,
+  });
+
+  const victimFirst = snapshot.witnessOrder[0] === ORDER_SPEC.victimId;
+  checks.push({
+    name: 'victim-dispatched-first',
+    pass: victimFirst,
+    detail: victimFirst
+      ? `${ORDER_SPEC.victimId} (the victim) is dispatched first`
+      : `first dispatched witness is ${snapshot.witnessOrder[0]}, not ${ORDER_SPEC.victimId}; agent-list order would have put ${ORDER_SPEC.agentListOrder[0]} there instead`,
+  });
+
+  // ROADMAP Phase 2 success criterion 1, asserted directly. Scoped by
+  // causedBy (matching 01-02's pattern), not "the first Attack by the
+  // victim anywhere".
+  const firstReaction = snapshot.reactions[0];
+  const victimRetaliatesFirst = !!firstReaction
+    && firstReaction.causedBy === scenario.eventId
+    && firstReaction.actor === ORDER_SPEC.victimId
+    && firstReaction.verb === 'Attack'
+    && firstReaction.target === ORDER_SPEC.attackerId;
+  checks.push({
+    name: 'victim-retaliates-first',
+    pass: victimRetaliatesFirst,
+    detail: victimRetaliatesFirst
+      ? `first reaction to event #${scenario.eventId} is ${ORDER_SPEC.victimId}:Attack->${ORDER_SPEC.attackerId}`
+      : `first reaction was ${firstReaction ? `${firstReaction.actor}:${firstReaction.verb}->${firstReaction.target}` : '(none)'}, expected ${ORDER_SPEC.victimId}:Attack->${ORDER_SPEC.attackerId}`,
+  });
+
+  // Observable proof of D-06: this witness's appraised impact falls in
+  // decideAndAct's no-reaction band, and agent-list order would have put
+  // them near the front (index 1 of 5), not the back.
+  const lastWitnessId = snapshot.witnessOrder[snapshot.witnessOrder.length - 1];
+  const indifferentLast = lastWitnessId === ORDER_SPEC.indifferentId;
+  const indifferentAgentListIndex = ORDER_SPEC.agentListOrder.indexOf(ORDER_SPEC.indifferentId);
+  checks.push({
+    name: 'indifferent-witness-dispatched-last',
+    pass: indifferentLast,
+    detail: indifferentLast
+      ? `${ORDER_SPEC.indifferentId} (appraised impact in decideAndAct's no-reaction band) is dispatched last, despite sitting at index ${indifferentAgentListIndex} of ${ORDER_SPEC.agentListOrder.length} in agent-list order`
+      : `last dispatched witness is ${lastWitnessId}, not ${ORDER_SPEC.indifferentId}`,
+  });
+
+  result.pass = checks.every(c => c.pass);
+
   if (opts.baseline) {
     const diffs = diffSnapshots(opts.baseline, snapshot);
     const baselineMatches = diffs.length === 0;

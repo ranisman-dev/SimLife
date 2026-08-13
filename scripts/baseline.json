@@ -40,8 +40,8 @@
         "causedBy": 1,
         "why": "affection + generalCare",
         "witnessOrder": [
-          "player",
-          "ives"
+          "ives",
+          "player"
         ]
       },
       {
@@ -58,8 +58,8 @@
         "causedBy": 1,
         "why": "CompetitiveJungle + boldness",
         "witnessOrder": [
-          "player",
-          "mara"
+          "mara",
+          "player"
         ]
       },
       {
@@ -79,8 +79,8 @@
         "causedBy": 3,
         "why": "conscientiousness + trust + affection",
         "witnessOrder": [
-          "player",
-          "ives"
+          "ives",
+          "player"
         ]
       }
     ],
@@ -514,8 +514,8 @@
         "causedBy": 1,
         "why": "affection + generalCare",
         "witnessOrder": [
-          "player",
-          "ives"
+          "ives",
+          "player"
         ]
       }
     ],
