@@ -1404,6 +1404,142 @@ function runRegressionCheck(opts = {}) {
   return result;
 }
 
+// ── Witness ordering scenario (ORDER-01/ORDER-02) ───────────────
+//
+// The scripted five-witness scenario the whole phase is judged on. Unlike
+// CLONE_SPEC (two isolated worlds, minimal witness sets), this scenario keeps
+// all six agents in 'square' on purpose — a five-witness set with genuinely
+// different top-candidate scores is the entire point: it's what lets a later
+// plan prove urgency-based dispatch actually reorders reactions relative to
+// plain agent-list order, not just that it runs without error.
+const ORDER_SPEC = {
+  attackerId: 'player',
+  // Chosen because garrick is *last* in createWorld()'s insertion order, so
+  // agent-list order (computeWitnesses/agentsAt) puts the victim dead last
+  // while urgency order must put him first — the maximum-contrast case for
+  // ORDER-01.
+  victimId: 'garrick',
+  // Deliberately tuned into decideAndAct's appraisal.impact >= -0.05
+  // early-return bucket (see the arithmetic comment in buildOrderingScenario
+  // below) — this is the witness Plan 02-03's ordering rule has to place
+  // last (or omit from the ranked dispatch) without special-casing.
+  indifferentId: 'ives',
+  // The expected pre-fix computeWitnesses order, recorded explicitly so
+  // later checks can assert the dispatch order genuinely diverges from it
+  // rather than comparing against a value derived from the same code under
+  // test.
+  agentListOrder: ['mara', 'ives', 'tomas', 'elena', 'garrick'],
+  // Appended to garrick's existing values. Honor feeds confrontTerms.Honor
+  // only when appraisal.isVictim is true, so it widens the victim's
+  // attack-vs-gossip margin without touching any bystander's score. Without
+  // it the margin is roughly 0.04, too thin for a fixture that later phases
+  // must keep passing.
+  victimValue: { value: 'Honor', weight: 0.6 },
+  indifferent: { agreeableness: 0.1, competitiveJungleWeight: 0.9, affectionToVictim: -0.4 },
+};
+
+// Builds one isolated, drift-off, DEFAULT_SEED-seeded world for the ORDER_SPEC
+// scenario, mirroring buildCloneVariant's shape. Unlike buildCloneVariant, no
+// one is relocated — all six agents stay in 'square', because a five-witness
+// set is the entire point of this fixture (scenarioParticipants was built,
+// D-09.1 LOCKED, precisely to generalize past the two-clone case).
+function buildOrderingScenario() {
+  const world = createWorld();
+  world.driftEnabled = false;
+  seedRng(world);
+
+  // Writing personality/values/worldview here is fixture construction, not
+  // runtime mutation: CLAUDE.md's mind-box table marks personality
+  // never-mutable *during simulation*, and buildCloneVariant already
+  // overrides a clone's mind.personality/values/worldview the same way — this
+  // is not PERSON-MODEL.md drift.
+  const victim = world.agents[ORDER_SPEC.victimId];
+  victim.mind.values = [...victim.mind.values, { ...ORDER_SPEC.victimValue }];
+
+  const indifferent = world.agents[ORDER_SPEC.indifferentId];
+  indifferent.mind.personality.agreeableness = ORDER_SPEC.indifferent.agreeableness;
+  const competitiveJungle = indifferent.mind.worldview.find(w => w.belief === 'CompetitiveJungle');
+  competitiveJungle.weight = ORDER_SPEC.indifferent.competitiveJungleWeight;
+  relOf(indifferent, ORDER_SPEC.victimId).affection = ORDER_SPEC.indifferent.affectionToVictim;
+
+  // Why the indifferent overrides land ives in decideAndAct's early-return
+  // bucket, arithmetic spelled out: generalCareOf(ives) = clamp(0.15 +
+  // 0.1*0.3 + 0 - 0.9*0.25, 0, 1) evaluates to -0.045 before the clamp and
+  // therefore 0 (Compassion/Community are both absent from ives's values, so
+  // those terms are 0). appraiseEvent's non-victim branch multiplies impact
+  // by generalCare * 0.3 (the victimAffection <= 0 path, reached because
+  // affection toward the victim is -0.4), so impact becomes -0 — which
+  // satisfies appraisal.impact >= -0.05 and also fails appraisal.impact < 0,
+  // meaning decideAndAct returns without even pushing a mind.log entry. That
+  // is the exact sub-branch Plan 02-03's ordering rule has to handle, and it
+  // must be reachable by construction, not by luck.
+
+  const result = performAction(world, ORDER_SPEC.attackerId, 'Attack', { targetId: ORDER_SPEC.victimId });
+  return { world, eventId: result.event.id };
+}
+
+// Pure, JSON-round-trippable, deliberately RNG-insensitive record of what
+// happened in the ordering scenario, in dispatch order. data.damage,
+// data.claim, data.quantity, world.tick, and world.rngCalls are all
+// deliberately excluded: those drift whenever the RNG stream shifts (Plan
+// 02-02 shifts it on purpose), and ORDER-01/ORDER-02's discriminating signal
+// is the reaction *sequence*, not the stochastic texture riding on top of it.
+function orderingSnapshot(world, originEventId) {
+  const origin = world.events.find(ev => ev.id === originEventId);
+  const witnessOrder = origin.witnessOrder.slice();
+
+  // Array order is dispatch order, so no sorting is needed or wanted.
+  const keptIds = new Set([originEventId]);
+  const reactions = [];
+  world.events.forEach(ev => {
+    if (ev.id === originEventId) return;
+    if (ev.causedBy !== null && keptIds.has(ev.causedBy)) {
+      keptIds.add(ev.id);
+      const target = (ev.data && 'targetId' in ev.data) ? ev.data.targetId
+        : (ev.data && 'to' in ev.data) ? ev.data.to
+        : null;
+      reactions.push({ id: ev.id, causedBy: ev.causedBy, actor: ev.actor, verb: ev.verb, target, witnessOrder: ev.witnessOrder.slice() });
+    }
+  });
+
+  return { witnessOrder, reactions };
+}
+
+// Follows runRegressionCheck's contract exactly: returns a structured result,
+// never prints, never throws, never touches the filesystem.
+function runOrderingCheck(opts = {}) {
+  const scenario = buildOrderingScenario();
+  const snapshot = orderingSnapshot(scenario.world, scenario.eventId);
+
+  const checks = [];
+  const result = { pass: true, checks, snapshot };
+
+  // ORDER-01 qualitative checks are deliberately NOT added in this plan —
+  // against pre-fix dispatch they would fail by design and leave
+  // `node scripts/verify.js` permanently red. Plan 02-03 adds them together
+  // with the fix that makes them true.
+  if (opts.baseline) {
+    const diffs = diffSnapshots(opts.baseline, snapshot);
+    const baselineMatches = diffs.length === 0;
+    checks.push({
+      name: 'order-matches-baseline',
+      pass: baselineMatches,
+      detail: baselineMatches ? 'live ordering snapshot matches the supplied baseline exactly' : `${diffs.length} field(s) differ from the supplied baseline`,
+    });
+    result.diffs = diffs;
+  }
+
+  result.pass = checks.every(c => c.pass);
+
+  // Informational output for ORDER-02, never a pass/fail check.
+  if (opts.prefix) {
+    result.prefixDiffs = diffSnapshots(opts.prefix.snapshot, snapshot);
+    result.prefixLabel = opts.prefix.capturedFor;
+  }
+
+  return result;
+}
+
 // ── Public API ──────────────────────────────────────────────
 
 const Sim = {
@@ -1425,6 +1561,9 @@ const Sim = {
   diffSnapshots,
   formatDiff,
   runRegressionCheck,
+  buildOrderingScenario,
+  orderingSnapshot,
+  runOrderingCheck,
 };
 
 if (typeof window !== 'undefined') window.Sim = Sim;
