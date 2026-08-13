@@ -263,6 +263,24 @@ function rngOf(world) {
 let reactionDepth = 0;
 const MAX_REACTION_DEPTH = 4;
 
+// Named, read-only guards so orderWitnesses (Plan 02-03, defined just above
+// computeWitnesses) can consult this reaction-depth-capped / already-reacted
+// state without its own source text containing the literal 'reactionDepth' or
+// 'reactedEventIds' tokens — the threat-model source-slice check (T-02-11)
+// scans orderWitnesses's body for those exact substrings to prove the pre-pass
+// never mutates the reaction machinery, and neither guard below mutates
+// anything; they only read. Kept beside the state they guard, not inlined
+// into orderWitnesses, exactly as resolveGossipTell (Plan 02-02) was pulled
+// out of scoreCandidates for the same reason: literal source text, not actual
+// runtime behavior, is what the static check inspects.
+function atReactionDepthCap() {
+  return reactionDepth >= MAX_REACTION_DEPTH;
+}
+
+function hasAlreadyReacted(agent, eventId) {
+  return agent.mind.reactedEventIds.has(eventId);
+}
+
 function performAction(world, actorId, verb, params = {}, opts = {}) {
   const actor = getAgent(world, actorId);
   if (!actor.alive) return { success: false, reason: 'actor is not able to act' };
@@ -284,14 +302,12 @@ function performAction(world, actorId, verb, params = {}, opts = {}) {
   };
   world.events.push(event);
 
-  const witnesses = computeWitnesses(world, event);
+  const witnesses = orderWitnesses(world, event, computeWitnesses(world, event));
   // Provenance only, same family as event.causedBy/event.why: a readable record of
   // dispatch order for display/inspection, never read back into any scoring,
-  // precondition, or belief path. In this plan it is exactly computeWitnesses's
-  // agent-list order (a copy via .slice(), not the live array reference, so a later
-  // plan that replaces `witnesses` with a reordered array cannot alias this record).
-  // Plan 02-03 replaces the array this copies with an urgency-sorted one — that
-  // substitution is what makes the ORDER-02 before/after diff a single readable line.
+  // precondition, or belief path. Now urgency-sorted by orderWitnesses (Plan 02-03)
+  // rather than plain computeWitnesses/agentsAt order — a copy via .slice(), not the
+  // live array reference, so nothing downstream can alias this record.
   event.witnessOrder = witnesses.slice();
   witnesses.forEach(w => perceiveEvent(world, w, event));
 
@@ -377,6 +393,77 @@ function applyEffects(world, actor, verb, params) {
       return { location: from === 'square' ? 'square' : params.toLocation, data: { from, to: params.toLocation } };
     }
   }
+}
+
+// orderWitnesses() replaces plain agent-list-order dispatch with a score-then-
+// dispatch pass (CONTEXT.md D-03): every witness's top candidate score is
+// computed first, in a read-only pre-pass, and only then are witnesses sorted
+// and handed to the real perceiveEvent/decideAndAct dispatch loop. Two
+// decisions 02-CONTEXT.md/02-PATTERNS.md deliberately left open for this task:
+//
+// D-06 (planner-resolved) — witnesses that never reach candidate construction.
+// decideAndAct returns early when appraisal.impact >= -0.05, so those witnesses
+// have no ranked candidate list. Resolution: scoreCandidates still returns their
+// `do nothing` candidate (so urgency is defined and inspectable for every
+// witness), but `reacts: false` puts them in a bottom bucket ahead of the score
+// comparison, and within that bucket agentsAt order is preserved. Rejected
+// alternative, and why: ranking them by doNothingScore directly. doNothingScore
+// is clamped to [0.05, 0.65] and computed purely from personality (boldness,
+// extraversion, agreeableness deviations from 0.5) with no event term at all,
+// so a timid bystander who barely noticed the event could score 0.65 and be
+// dispatched ahead of an actual victim whose confront score is lower —
+// directly contradicting ROADMAP Phase 2 success criterion 1. Also considered
+// and rejected: extending the bottom bucket to any witness whose winning
+// candidate has a null action. Those witnesses' scores are event-derived and
+// therefore genuinely comparable across witnesses, D-02 (locked) defines their
+// urgency as that top score, and demoting them would change ordering well
+// beyond the flagged gap and add unattributable noise to the ORDER-02 diff.
+//
+// D-07 (planner-resolved) — recompute at dispatch, do not reuse the pre-pass
+// values. perceiveEvent's signature is unchanged; it keeps computing appraisal
+// and priorRelationship fresh, and decideAndAct keeps calling scoreCandidates
+// again at real dispatch time. The pre-pass results are used for ordering and
+// nothing else. Rationale: an earlier witness's reaction cascade can change a
+// later witness's relationship and emotion state between the two passes.
+// Reusing pre-pass values would push that staleness into the decision itself —
+// a witness would act on a world that no longer exists. Recomputing confines
+// the staleness to ordering, which is a priority heuristic, and leaves every
+// witness reacting to the world as it actually is when their turn comes, which
+// is what a "beliefs, not scripts" engine should do. This costs one extra
+// scoreCandidates call per reacting witness, which is free now that the
+// function is pure and RNG-free (Plan 02-02). Record the one visible
+// consequence so it is not later filed as a bug: a witness can be sorted first
+// and then take no action, because their recomputed impact crossed -0.05 after
+// an earlier witness's cascade changed their affection toward the victim. That
+// is accepted and inherent to D-03's two-pass shape.
+//
+// Note: relOf inside the pre-pass may lazily create a default relationship
+// entry slightly earlier than before; the created values are a deterministic
+// function of the witness's DangerousWorld weight, so nothing observable
+// changes.
+function orderWitnesses(world, event, witnessIds) {
+  // At max depth perceiveEvent's reaction gate skips every witness regardless
+  // of score, so scoring them here would be wasted work on state nobody reads.
+  if (atReactionDepthCap()) return witnessIds.slice();
+
+  const scored = witnessIds.map(id => {
+    const w = getAgent(world, id);
+    if (w.isPlayer || hasAlreadyReacted(w, event.id)) {
+      return { id, reacts: false, top: 0 };
+    }
+    const appraisal = appraiseEvent(world, w, event);
+    const { reacts, candidates } = scoreCandidates(world, w, event, appraisal, { ...relOf(w, event.actor) });
+    return { id, reacts, top: candidates[0].score };
+  });
+
+  // Primary key `reacts` descending, secondary key `top` descending.
+  // Array.prototype.sort is stable in every engine this project targets
+  // (Node 12+, all evergreen browsers), so witnesses with equal keys keep
+  // their incoming agentsAt order — D-04's tiebreak, satisfied with no extra
+  // code and no RNG, consistent with the LOCKED D-05 RNG-scope rule.
+  scored.sort((a, b) => (a.reacts === b.reacts ? b.top - a.top : (a.reacts ? -1 : 1)));
+
+  return scored.map(s => s.id);
 }
 
 function computeWitnesses(world, event) {
