@@ -1951,6 +1951,96 @@ function runDecayCheck(opts = {}) {
     detail: `computed beliefConfidence at push tick=${staleComputedConfidence}, TUNING.beliefPruneFloor=${TUNING.beliefPruneFloor}; stale id "${staleId}" ${stalePruned ? 'was pruned' : 'was NOT pruned'}`,
   });
 
+  // DECAY-03, check 5: needs-regenerate-over-time. Lower an NPC's safety via
+  // a real Attack (through performAction, so the drop comes from the real
+  // adjustNeed path, not a hand-poked field), then assert needValue reads
+  // strictly increase over elapsed ticks and never exceed 1. The other three
+  // NPCs are moved 'away' first so garrick is the only witness of the
+  // Attack — this keeps the scenario deterministic by avoiding a reaction
+  // cascade that could touch garrick's safety a second time. ROADMAP Phase 3
+  // success criterion 3 for `safety`.
+  const needsWorld = createWorld();
+  needsWorld.driftEnabled = false;
+  seedRng(needsWorld);
+  ['mara', 'ives', 'tomas', 'elena'].forEach(id => performAction(needsWorld, id, 'Move', { toLocation: 'away' }));
+  const safetyVictim = needsWorld.agents.garrick;
+  const attackRes = performAction(needsWorld, 'player', 'Attack', { targetId: 'garrick' });
+  const safetyEventTick = attackRes.event.tick;
+  const safetyAtFormation = needValue(safetyVictim, 'safety', safetyEventTick);
+  const safetyAt20 = needValue(safetyVictim, 'safety', safetyEventTick + 20);
+  const safetyAt100 = needValue(safetyVictim, 'safety', safetyEventTick + 100);
+  const safetyRegenerates = Math.abs(safetyAtFormation - 0.6) < 0.05 &&
+    safetyAt20 > safetyAtFormation && safetyAt100 > safetyAt20 && safetyAt100 <= 1;
+  checks.push({
+    name: 'needs-regenerate-over-time',
+    pass: safetyRegenerates,
+    detail: `safety at formation (tick ${safetyEventTick})=${safetyAtFormation}, at +20=${safetyAt20}, at +100=${safetyAt100}`,
+  });
+
+  // DECAY-03, check 6: the same assertion shape applied to sustenance and
+  // belonging, confirming the accessor is not safety-specific. sustenance's
+  // drop comes from a real Take (through performAction, same real-path
+  // requirement as check 5 above) — tomas starts with 1 bread, so taking 1
+  // empties it and fires the real sustenance hook. belonging has no real
+  // trigger yet in this plan (D-05's Give/Tell hook lands in Plan 03-03), so
+  // its regeneration is demonstrated straight off makeAgent's asymmetric 0.6
+  // default record — belonging starts at 0.6 and rises toward 1 like the
+  // others, per D-06, with no hand-poking needed to show that.
+  const sustenanceWorld = createWorld();
+  sustenanceWorld.driftEnabled = false;
+  seedRng(sustenanceWorld);
+  ['mara', 'ives', 'elena', 'garrick'].forEach(id => performAction(sustenanceWorld, id, 'Move', { toLocation: 'away' }));
+  const sustenanceVictim = sustenanceWorld.agents.tomas;
+  const takeRes = performAction(sustenanceWorld, 'player', 'Take', { targetId: 'tomas', item: 'bread', quantity: 1 });
+  const sustenanceEventTick = takeRes.event.tick;
+  const sustenanceAtFormation = needValue(sustenanceVictim, 'sustenance', sustenanceEventTick);
+  const sustenanceAt20 = needValue(sustenanceVictim, 'sustenance', sustenanceEventTick + 20);
+  const sustenanceAt100 = needValue(sustenanceVictim, 'sustenance', sustenanceEventTick + 100);
+
+  const belongingWorld = createWorld();
+  seedRng(belongingWorld);
+  const belongingAgent = belongingWorld.agents.mara;
+  const belongingAtFormation = needValue(belongingAgent, 'belonging', 0);
+  const belongingAt20 = needValue(belongingAgent, 'belonging', 20);
+  const belongingAt100 = needValue(belongingAgent, 'belonging', 100);
+
+  const allThreeRegenerate =
+    sustenanceAt20 > sustenanceAtFormation && sustenanceAt100 > sustenanceAt20 && sustenanceAt100 <= 1 &&
+    belongingAt20 > belongingAtFormation && belongingAt100 > belongingAt20 && belongingAt100 <= 1;
+  checks.push({
+    name: 'all-three-needs-regenerate',
+    pass: allThreeRegenerate,
+    detail: `sustenance: formation(tick ${sustenanceEventTick})=${sustenanceAtFormation}, +20=${sustenanceAt20}, +100=${sustenanceAt100}; belonging: formation=${belongingAtFormation}, +20=${belongingAt20}, +100=${belongingAt100}`,
+  });
+
+  // DECAY-03, check 7: needValue must never write back to the object it
+  // reads — snapshotWorld() serializes raw stored values, so a
+  // write-back-on-read would make the golden-master baseline depend on read
+  // order/history. Snapshot every NPC's needs, call needValue for all three
+  // keys at several ticks in a deliberately scrambled (non-monotonic) order,
+  // then assert the stringified needs are byte-identical to the snapshot.
+  const purityWorld = createWorld();
+  seedRng(purityWorld);
+  const purityNpcs = Object.values(purityWorld.agents).filter(a => !a.isPlayer);
+  const needsSnapshotBefore = purityNpcs.map(a => JSON.stringify(a.mind.needs));
+  let purityReadsPerformed = 0;
+  const scrambledTicks = [37, 0, 200, 5, 91];
+  purityNpcs.forEach(a => {
+    scrambledTicks.forEach(t => {
+      ['belonging', 'safety', 'sustenance'].forEach(key => {
+        needValue(a, key, t);
+        purityReadsPerformed++;
+      });
+    });
+  });
+  const needsSnapshotAfter = purityNpcs.map(a => JSON.stringify(a.mind.needs));
+  const needValueIsPure = needsSnapshotBefore.every((s, i) => s === needsSnapshotAfter[i]);
+  checks.push({
+    name: 'needvalue-is-pure',
+    pass: needValueIsPure,
+    detail: `agents=${purityNpcs.length}, reads=${purityReadsPerformed}, needs unchanged=${needValueIsPure}`,
+  });
+
   return { pass: checks.every(c => c.pass), checks };
 }
 
