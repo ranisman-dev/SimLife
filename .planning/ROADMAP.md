@@ -28,7 +28,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Verification Infrastructure** - Seeded RNG, a drift-off toggle that reproduces the original regression case, and one named constants block for every new tuning number (completed 2026-08-12)
 - [ ] **Phase 2: Witness Reaction Ordering** - NPCs react to a shared event in urgency order, not agent-list order
-- [ ] **Phase 3: Belief Decay & Needs Regeneration** - Beliefs fade like memories; safety/sustenance/belonging recover instead of only dropping
+- [x] **Phase 3: Belief Decay & Needs Regeneration** - Beliefs fade like memories; safety/sustenance/belonging recover instead of only dropping (completed 2026-08-13)
 - [ ] **Phase 4: Tell/Move-Aware Memory Importance** - Being told something severe forms a memory as important as witnessing it
 - [ ] **Phase 5: Slow Trait Drift** - Personality/values/worldview shift gradually under sustained pressure, committed only after each cascade resolves
 - [ ] **Phase 6: Snap Events** - A single intense event can immediately and permanently change a trait/value/worldview entry
@@ -130,7 +130,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 03-05-PLAN.md — The single human-reviewed golden-master re-bless, PERSON-MODEL.md/CLAUDE.md doc sync, and the human browser checkpoint
+- [x] 03-05-PLAN.md — The single human-reviewed golden-master re-bless, PERSON-MODEL.md/CLAUDE.md doc sync, and the human browser checkpoint
 
 **Research**: Skip — "existing idiom, lower risk"; both are computed-live-at-read or event-driven-stored patterns already proven elsewhere in `sim.js`.
 
@@ -200,7 +200,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|-----------------|--------|-----------|
 | 1. Verification Infrastructure | 3/3 | Complete   | 2026-08-12 |
 | 2. Witness Reaction Ordering | 3/4 | In Progress|  |
-| 3. Belief Decay & Needs Regeneration | 4/5 | In Progress|  |
+| 3. Belief Decay & Needs Regeneration | 5/5 | Complete   | 2026-08-13 |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
 | 5. Slow Trait Drift | 0/1 | Not started | - |
 | 6. Snap Events | 0/1 | Not started | - |
