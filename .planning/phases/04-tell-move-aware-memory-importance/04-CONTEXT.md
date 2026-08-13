@@ -103,6 +103,39 @@ MEMORY-02.
   today's behavior — this phase only closes the gap for the "explosive" case
   REQUIREMENTS.md names, not every Move.)*
 
+### Resolving 04-PATTERNS.md's numeric findings (post-mapping addendum)
+- **D-06 [auto]:** Tell's sign term: `is_trustworthy` is the only positive-polarity
+  predicate of the six (its base severity adds to impact); `is_dead`, `attacked`,
+  `stole_from`, `is_dangerous`, and `provoked` are all negative. Not stated explicitly
+  in D-01 above; `04-PATTERNS.md` correctly flagged this as load-bearing (`applyAppraisal`
+  branches on `impact < 0` vs. `>= 0` to route Anger/Fear vs. the forgiveness path) and
+  it needed to be pinned down before planning, not left for the planner to guess.
+- **D-07 [auto]:** D-03's `claim.subject` affection scaling uses the **boost form**, not
+  a damping form: `impact *= 1 + clamp(relOf(witness, claim.subject).affection, 0, 1) * 0.5`
+  — multiplies UP for a witness who cares about the claim's subject, never down below the
+  base severity. `04-PATTERNS.md` numerically verified that a literal damping reading
+  (mirroring the existing block's `else` arm) collapses the flagship direct-told `is_dead`
+  case by roughly 70% at default relationship affection (~0.3) — directly contradicting
+  D-01's stated intent that `is_dead` "should reach comparable severity from an ordinary
+  witness too." The boost form preserves that intent while still scaling further for
+  someone dearly cared about, and is the block's *other* existing arm
+  (`victimAffection * generalCare * 1.5`-style amplification), not an invented shape.
+  `provoked`'s carry-forward exception stands as originally stated (only applies when the
+  witness isn't themselves the named provoker).
+- **D-08 [auto]:** D-04's `-0.5` Move flight-impact base stays as originally set —
+  `04-PATTERNS.md` verified it only reliably clears the `0.1` floor for a witness with
+  above-fixture-median `generalCareOf` (e.g. `elena`, `generalCareOf ≈ 0.715`), collapsing
+  to the exact floor for lower-empathy witnesses (`ives`, `tomas`, `garrick`, `mara`).
+  This is accepted as correct, not escalated: an apathetic bystander genuinely shouldn't
+  form a vivid memory of a stranger fleeing, and escalating the base magnitude to clear
+  the floor for every witness was checked against a second constraint — it would invert
+  the ordering against that same witness's impact from witnessing the CAUSING Attack
+  directly (`04-PATTERNS.md`'s ordering check: at a magnitude that clears `ives`'s floor,
+  `elena`'s flight-impact would exceed her own bystander-impact from the Attack that
+  caused the flight, which is backwards). MEMORY-01's Move check must therefore target a
+  witness whose `generalCareOf` clears the floor at `-0.5` (e.g. `elena`), not an
+  arbitrary fixture witness, and assert the real computed value in its `detail` string.
+
 ### Importance ceiling (MEMORY-02)
 - **D-05 [auto]:** The `clamp(Math.abs(appraisal.impact), 0.1, 1)` call in
   `perceiveEvent` (`sim.js:720`) has its upper bound raised from the literal `1` to a
