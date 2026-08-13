@@ -93,7 +93,7 @@ None requiring a code-behavior change. One acceptance-criterion wording note wor
 
 **Acceptance criterion wording mismatch (not a deviation from the plan's intent):** Task 1's acceptance criteria state `grep -c 'witness.mind.log.push' sim.js` should be `2`. The actual whole-file count is `7` both before and after this plan's edits (confirmed via `git show HEAD:sim.js` on the pre-plan base commit) — `witness.mind.log.push` appears at several other, pre-existing sites in the file unrelated to `decideAndAct` (goal-reassessment logging, gossip-resolution logging, etc.). The criterion's real intent — "the marker was added to the existing winner write, not as a third log write" — was verified the correct way: within `decideAndAct`'s own body there are exactly 2 `witness.mind.log.push` calls (the no-reaction entry and the winner entry), unchanged in count from before this plan, with the new `retreatForSafety` property added to the existing winner-entry object literal rather than as a new call site. No code change resulted from this; it's the same category of stale-context imprecision the plan itself flags elsewhere ("re-grep before editing... exact line may have shifted").
 
-**Finding recorded per the plan's `<output>` instructions:** the plan's context predicted "`retreatForSafety` should produce NO golden-master snapshot diff of its own... since `presentation.js` reads log entries by named field." This held for the UI (presentation.js is unaffected, confirmed by inspection — it reads `d.trigger`/`d.considered`/`d.chose`/`d.why` by name, never iterates keys), but the premise didn't extend to `snapshotWorld()`, which serializes the full raw `agent.mind.log` array via `JSON.stringify` — an entirely different mechanism from presentation.js's rendering, and one that does capture every key on every log entry regardless of whether anything reads it back. So the diff DID grow because of the new property (17 fields now differ vs. what Plan 03-03 already had drifted, all of it either `mind.log.N.retreatForSafety: (absent) -> false` or the pre-existing Plan 03-02 needs-shape diff carried forward). This is expected, harmless, and already covered by the plan's explicit "the only FAIL lines are the baseline checks" gate — `order-matches-baseline` in particular stayed green throughout, confirming dispatch order itself is untouched. Plan 03-05 owns the re-bless.
+**Finding recorded per the plan's `<output>` instructions:** the plan's context predicted "`retreatForSafety` should produce NO golden-master snapshot diff of its own... since `presentation.js` reads log entries by named field." This held for the UI (presentation.js is unaffected, confirmed by inspection — it reads `d.trigger`/`d.considered`/`d.chose`/`d.why` by name, never iterates keys), but the premise didn't extend to `snapshotWorld()`, which serializes the full raw `agent.mind.log` array via `JSON.stringify` — an entirely different mechanism from presentation.js's rendering, and one that does capture every key on every log entry regardless of whether anything reads it back. So the diff DID grow because of the new property: 17 fields now differ, reconciling exactly as 12 (the pre-existing Plan 03-02 `{value, tick}` needs-shape diff, carried forward unchanged from 03-03-SUMMARY.md's own recorded count) + 5 new (`mind.log.N.retreatForSafety: (absent) -> false`, one per pre-existing logged decision in the two-clone fixture). This plan added exactly one new diff source — the `retreatForSafety` field — and nothing else. See the verbatim `Baseline diff:` block below. This is expected, harmless, and already covered by the plan's explicit "the only FAIL lines are the baseline checks" gate — `order-matches-baseline` in particular stayed green throughout, confirming dispatch order itself is untouched. Plan 03-05 owns the re-bless.
 
 ## Issues Encountered
 
@@ -126,6 +126,32 @@ OVERALL: FAIL
 ```
 
 `OVERALL: FAIL` is expected — the sole `FAIL` line is `snapshot-matches-baseline` (see below); `order-matches-baseline` stayed `PASS` (dispatch order itself is untouched by this plan). `--update-baseline` was never run; `scripts/known-mismatch.json` does not exist; `git status --short scripts/` showed no changes throughout.
+
+### `Baseline diff:` block for Plan 03-05 (verbatim)
+
+```
+FAIL snapshot-matches-baseline :: 17 field(s) differ from the supplied baseline
+Baseline diff:
+  jungle.agents.ives.mind.log.0.retreatForSafety: (absent) -> false
+  jungle.agents.ives.mind.needs.belonging: 0.6 -> {"value":0.6,"tick":0}
+  jungle.agents.ives.mind.needs.safety: 1 -> {"value":1,"tick":0}
+  jungle.agents.ives.mind.needs.sustenance: 1 -> {"value":1,"tick":0}
+  jungle.agents.mara.mind.log.0.retreatForSafety: (absent) -> false
+  jungle.agents.mara.mind.log.1.retreatForSafety: (absent) -> false
+  jungle.agents.mara.mind.needs.belonging: 0.6 -> {"value":0.6,"tick":0}
+  jungle.agents.mara.mind.needs.safety: 0.6 -> {"value":0.6,"tick":0}
+  jungle.agents.mara.mind.needs.sustenance: 1 -> {"value":1,"tick":0}
+  averse.agents.ives.mind.log.0.retreatForSafety: (absent) -> false
+  averse.agents.ives.mind.needs.belonging: 0.6 -> {"value":0.6,"tick":0}
+  averse.agents.ives.mind.needs.safety: 1 -> {"value":1,"tick":0}
+  averse.agents.ives.mind.needs.sustenance: 1 -> {"value":1,"tick":0}
+  averse.agents.mara.mind.log.0.retreatForSafety: (absent) -> false
+  averse.agents.mara.mind.needs.belonging: 0.6 -> {"value":0.6,"tick":0}
+  averse.agents.mara.mind.needs.safety: 0.6 -> {"value":0.6,"tick":0}
+  averse.agents.mara.mind.needs.sustenance: 1 -> {"value":1,"tick":0}
+```
+
+Reconciles cleanly as 12 + 5 = 17: the 12 `mind.needs.*` entries (`belonging`/`safety`/`sustenance` × `{jungle,averse}` × `{ives,mara}`) are carried forward unchanged from 03-03-SUMMARY.md's own recorded diff (Plan 03-02's `{value, tick}` needs-shape change) — this plan added zero new diff sources of that kind. The 5 new entries this plan DOES add are exactly the `mind.log.N.retreatForSafety: (absent) -> false` lines, one per pre-existing logged decision in the two-clone `CompetitiveJungle` fixture (`jungle.ives.log.0`, `jungle.mara.log.0`, `jungle.mara.log.1`, `averse.ives.log.0`, `averse.mara.log.0`) — every decision any of those agents made before this plan's `decideAndAct` change now also carries the new property. This is the single new diff source this plan introduces, and it's exactly the `retreatForSafety` field, nothing else.
 
 ### All four ORDER-01 qualitative check lines (Task 3)
 
@@ -180,6 +206,32 @@ Same failure shape as control 1 (present at zero of five, transitions=0) — wit
 ```
 
 Exactly the load-bearing failure the plan calls for: with the label-only rule, the fear-driven retreat gets `retreatForSafety: true`, latching the witness onto the looser Exit threshold; the quiet-regime sample at safety 0.70 (inside the band, below Exit but above Enter) then wrongly produces a retreat candidate. Reverted immediately; diff confirmed clean.
+
+### Negative control 4 — harness preconditions are asserted, not assumed
+
+Two sub-controls, exercising the "precondition failed" branches that don't otherwise run (checks 1-3 and check 4 all pass cleanly on the happy path, so these branches are dead code unless deliberately exercised).
+
+**4a — raised the probe witness's `rel.fear` to `0.5` (above the `<=0.3` precondition) before checks 1-3:**
+
+```json
+{"name":"hysteresis-enter-threshold-holds","pass":false,"detail":"harness precondition failed: rel.fear=0.5 (want <=0.3), fearEmotion=0 (want <=0.2), appraisal.impact=-1.2 (want <-0.05)"}
+{"name":"hysteresis-persists-in-band","pass":false,"detail":"harness precondition failed: rel.fear=0.5 (want <=0.3), fearEmotion=0 (want <=0.2), appraisal.impact=-1.2 (want <-0.05)"}
+{"name":"hysteresis-exit-threshold-holds","pass":false,"detail":"harness precondition failed: rel.fear=0.5 (want <=0.3), fearEmotion=0 (want <=0.2), appraisal.impact=-1.2 (want <-0.05)"}
+```
+
+All three report the precondition failure in `detail` rather than passing vacuously. Reverted immediately.
+
+**4b — zeroed check 4's `rel.fear`/Fear-emotion setup (so retreat does NOT win the fear-driven decision):**
+
+```json
+{
+  "name": "fear-driven-retreat-does-not-latch-safety",
+  "pass": false,
+  "detail": "retreat did not win the fear-driven decision: chose=\"tell tomas about ives\", considered=tell tomas about ives=0.59 | press ives for an explanation=0.36 | do nothing=0.22 | attack ives=0.19"
+}
+```
+
+Reports the actual winning label and its score rather than passing. Reverted immediately; `git diff --stat sim.js` confirmed clean (empty, since `sim.js` was already committed) after both sub-controls.
 
 ### `git status --short` after all three task commits
 
