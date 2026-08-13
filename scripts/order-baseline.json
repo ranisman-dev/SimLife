@@ -1,0 +1,235 @@
+{
+  "witnessOrder": [
+    "mara",
+    "ives",
+    "tomas",
+    "elena",
+    "garrick"
+  ],
+  "reactions": [
+    {
+      "id": 2,
+      "causedBy": 1,
+      "actor": "mara",
+      "verb": "Tell",
+      "target": "player",
+      "witnessOrder": [
+        "player",
+        "ives",
+        "tomas",
+        "elena",
+        "garrick"
+      ]
+    },
+    {
+      "id": 3,
+      "causedBy": 1,
+      "actor": "tomas",
+      "verb": "Attack",
+      "target": "player",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "elena",
+        "garrick"
+      ]
+    },
+    {
+      "id": 4,
+      "causedBy": 3,
+      "actor": "mara",
+      "verb": "Tell",
+      "target": "tomas",
+      "witnessOrder": [
+        "player",
+        "ives",
+        "tomas",
+        "elena",
+        "garrick"
+      ]
+    },
+    {
+      "id": 5,
+      "causedBy": 3,
+      "actor": "elena",
+      "verb": "Tell",
+      "target": "mara",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "tomas",
+        "garrick"
+      ]
+    },
+    {
+      "id": 6,
+      "causedBy": 3,
+      "actor": "garrick",
+      "verb": "Tell",
+      "target": "tomas",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "tomas",
+        "elena"
+      ]
+    },
+    {
+      "id": 7,
+      "causedBy": 1,
+      "actor": "elena",
+      "verb": "Tell",
+      "target": "mara",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "tomas",
+        "garrick"
+      ]
+    },
+    {
+      "id": 8,
+      "causedBy": 1,
+      "actor": "garrick",
+      "verb": "Attack",
+      "target": "player",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "tomas",
+        "elena"
+      ]
+    },
+    {
+      "id": 9,
+      "causedBy": 8,
+      "actor": "mara",
+      "verb": "Tell",
+      "target": "garrick",
+      "witnessOrder": [
+        "player",
+        "ives",
+        "tomas",
+        "elena",
+        "garrick"
+      ]
+    },
+    {
+      "id": 10,
+      "causedBy": 8,
+      "actor": "tomas",
+      "verb": "Attack",
+      "target": "garrick",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "elena",
+        "garrick"
+      ]
+    },
+    {
+      "id": 11,
+      "causedBy": 10,
+      "actor": "mara",
+      "verb": "Tell",
+      "target": "tomas",
+      "witnessOrder": [
+        "player",
+        "ives",
+        "tomas",
+        "elena",
+        "garrick"
+      ]
+    },
+    {
+      "id": 12,
+      "causedBy": 10,
+      "actor": "elena",
+      "verb": "Tell",
+      "target": "ives",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "tomas",
+        "garrick"
+      ]
+    },
+    {
+      "id": 13,
+      "causedBy": 10,
+      "actor": "garrick",
+      "verb": "Attack",
+      "target": "tomas",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "tomas",
+        "elena"
+      ]
+    },
+    {
+      "id": 14,
+      "causedBy": 13,
+      "actor": "mara",
+      "verb": "Tell",
+      "target": "garrick",
+      "witnessOrder": [
+        "player",
+        "ives",
+        "tomas",
+        "elena",
+        "garrick"
+      ]
+    },
+    {
+      "id": 15,
+      "causedBy": 13,
+      "actor": "tomas",
+      "verb": "Tell",
+      "target": "ives",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "elena",
+        "garrick"
+      ]
+    },
+    {
+      "id": 16,
+      "causedBy": 13,
+      "actor": "elena",
+      "verb": "Tell",
+      "target": "garrick",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "tomas",
+        "garrick"
+      ]
+    },
+    {
+      "id": 17,
+      "causedBy": 8,
+      "actor": "elena",
+      "verb": "Tell",
+      "target": "garrick",
+      "witnessOrder": [
+        "player",
+        "mara",
+        "ives",
+        "tomas",
+        "garrick"
+      ]
+    }
+  ]
+}
