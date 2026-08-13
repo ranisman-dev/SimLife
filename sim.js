@@ -65,6 +65,15 @@ const TUNING = {
   // which witnesses produce a retreat candidate, which feeds orderWitnesses'
   // ranking. Do not tune this value against this plan's checks in isolation.
   needRegenRate: 0.02,
+  // belonging's first-ever triggers (D-05): the only two positive need
+  // deltas anywhere in this file — every other adjustNeed call site
+  // (Take's sustenance drop, Attack's safety drop) is -0.4, so there is no
+  // existing magnitude precedent to mirror; these are the values this plan
+  // locks. Vouching for someone is deliberately worth less than giving them
+  // something you own — speaking well of someone is a lighter act of
+  // connection than parting with an item from your own inventory.
+  belongingGiveGain: 0.08,
+  belongingVouchGain: 0.05,
 };
 
 // The always-reproducible seed seedRng() uses when no explicit seed is
@@ -407,6 +416,14 @@ function applyEffects(world, actor, verb, params) {
       const qty = Math.min(params.quantity || 1, actor.inventory[item] || 0);
       actor.inventory[item] -= qty;
       target.inventory[item] = (target.inventory[item] || 0) + qty;
+      // D-05: the act of giving raises the GIVER's own belonging, not the
+      // recipient's — guard is intentionally !actor.isPlayer, the inverse of
+      // Take/Attack's !target.isPlayer, because this hook adjusts the actor
+      // and the player has mind: null. Every Give already carries
+      // consented: true unconditionally (Take is the codebase's only
+      // coercive-transfer verb), so D-05's "no coercive framing" qualifier
+      // is satisfied by verb identity alone — no extra check needed here.
+      if (!actor.isPlayer) adjustNeed(actor, 'belonging', TUNING.belongingGiveGain, world.tick);
       return { location: actor.location, data: { targetId: target.id, item, quantity: qty, consented: true } };
     }
     case 'Attack': {
@@ -419,6 +436,18 @@ function applyEffects(world, actor, verb, params) {
     }
     case 'Tell': {
       const target = getAgent(world, params.targetId);
+      // D-05: vouching for someone (an is_trustworthy claim) raises the
+      // TELLER's own belonging — same !actor.isPlayer guard direction as
+      // Give above, and the same reasoning. Guard against a missing
+      // params.claim so a malformed Tell can't throw here (checkPreconditions
+      // already requires a claim.predicate to exist, but this hook reads
+      // params.claim independently and shouldn't assume that invariant).
+      // This is separate from applyClaimBelief's existing is_trustworthy
+      // branch (recipient's trust/affection) — that handles the *listener's*
+      // reaction and is untouched by this hook.
+      if (!actor.isPlayer && params.claim && params.claim.predicate === 'is_trustworthy') {
+        adjustNeed(actor, 'belonging', TUNING.belongingVouchGain, world.tick);
+      }
       return { location: actor.location, data: { targetId: target.id, claim: params.claim } };
     }
     case 'Move': {
