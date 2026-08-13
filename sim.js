@@ -58,12 +58,19 @@ const TUNING = {
   // to diverge. addMemory's own inline 0.03 is intentionally left as-is per
   // D-07 (pre-existing constants aren't retrofitted into TUNING).
   beliefPruneFloor: 0.03,
-  // PROVISIONAL — finalized in Plan 03-05 Task 1. Asymptotic-approach rate
-  // for needValue()'s regeneration formula (D-04). Coupled to Phase 2's
-  // LOCKED ORDER_SPEC fixture: the victim's safety drops to 0.6 there, and
-  // how fast it climbs back across Plan 03-04's hysteresis band can change
-  // which witnesses produce a retreat candidate, which feeds orderWitnesses'
-  // ranking. Do not tune this value against this plan's checks in isolation.
+  // Asymptotic-approach rate for needValue()'s regeneration formula (D-04).
+  // VERIFIED against Phase 2's LOCKED ORDER_SPEC fixture by Plan 03-04 Task
+  // 3, with both D-04 (this rate) and D-07 (the retreat-gate hysteresis
+  // band) live for the first time together: all four ORDER-01 qualitative
+  // checks (dispatch-order-differs-from-agent-list, victim-dispatched-first,
+  // victim-retaliates-first, indifferent-witness-dispatched-last) and all
+  // fourteen DECAY-01..05 checks passed at this value on the first build —
+  // no rate was rejected, no tuning was needed. garrick's origin-event
+  // decision (attack player=0.74 vs tell mara about player=0.58) came out
+  // byte-identical to 02-03-SUMMARY.md's recorded pre-Phase-3 margin. Plan
+  // 03-05 still owns the final golden-master re-bless (the baseline JSON
+  // files themselves), but the rate itself is locked as of this plan, not
+  // provisional.
   needRegenRate: 0.02,
   // belonging's first-ever triggers (D-05): the only two positive need
   // deltas anywhere in this file — every other adjustNeed call site
