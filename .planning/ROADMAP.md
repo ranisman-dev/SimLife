@@ -75,7 +75,25 @@ Plans:
   1. When an attack victim and an uninvolved bystander both witness the same event, the victim's retaliation reaction is dispatched before the bystander's reaction, regardless of agent-list order.
   2. A captured "before" baseline of the current `forEach`-order reactions for a scripted scenario is diffed against the new urgency-ordered output, showing the fix's effect concretely rather than assumed.
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — `event.witnessOrder` provenance, the scripted five-witness ordering scenario, and the frozen pre-fix order fixture captured before any behavior change
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-02-PLAN.md — Behavior-preserving refactors: gossip RNG deferred into a `resolve()` hook, and the pure `scoreCandidates()` extracted from `decideAndAct`
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02-03-PLAN.md — `orderWitnesses()` urgency-ordered dispatch wired into `performAction`, the four ORDER-01 qualitative checks, and the captured before/after order diff
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 02-04-PLAN.md — Doc sync (CLAUDE.md pipeline/decide-act paragraphs, PERSON-MODEL.md decision-provenance section) and the human browser checkpoint
+
 **Research**: Skip — well-scoped existing gap with a clear fix shape (score-then-fire-highest-first), already documented in CONCERNS.md.
 
 ### Phase 3: Belief Decay & Needs Regeneration
@@ -159,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
 | 1. Verification Infrastructure | 3/3 | Complete   | 2026-08-12 |
-| 2. Witness Reaction Ordering | 0/1 | Not started | - |
+| 2. Witness Reaction Ordering | 0/4 | Not started | - |
 | 3. Belief Decay & Needs Regeneration | 0/1 | Not started | - |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
 | 5. Slow Trait Drift | 0/1 | Not started | - |
