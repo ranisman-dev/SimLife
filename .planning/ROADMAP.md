@@ -88,7 +88,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-03-PLAN.md — `orderWitnesses()` urgency-ordered dispatch wired into `performAction`, the four ORDER-01 qualitative checks, and the captured before/after order diff
+- [x] 02-03-PLAN.md — `orderWitnesses()` urgency-ordered dispatch wired into `performAction`, the four ORDER-01 qualitative checks, and the captured before/after order diff
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
 | 1. Verification Infrastructure | 3/3 | Complete   | 2026-08-12 |
-| 2. Witness Reaction Ordering | 2/4 | In Progress|  |
+| 2. Witness Reaction Ordering | 3/4 | In Progress|  |
 | 3. Belief Decay & Needs Regeneration | 0/1 | Not started | - |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
 | 5. Slow Trait Drift | 0/1 | Not started | - |
