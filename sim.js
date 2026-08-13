@@ -65,6 +65,15 @@ const TUNING = {
   // which witnesses produce a retreat candidate, which feeds orderWitnesses'
   // ranking. Do not tune this value against this plan's checks in isolation.
   needRegenRate: 0.02,
+  // belonging's first-ever triggers (D-05): the only two positive need
+  // deltas anywhere in this file — every other adjustNeed call site
+  // (Take's sustenance drop, Attack's safety drop) is -0.4, so there is no
+  // existing magnitude precedent to mirror; these are the values this plan
+  // locks. Vouching for someone is deliberately worth less than giving them
+  // something you own — speaking well of someone is a lighter act of
+  // connection than parting with an item from your own inventory.
+  belongingGiveGain: 0.08,
+  belongingVouchGain: 0.05,
 };
 
 // The always-reproducible seed seedRng() uses when no explicit seed is
@@ -407,6 +416,14 @@ function applyEffects(world, actor, verb, params) {
       const qty = Math.min(params.quantity || 1, actor.inventory[item] || 0);
       actor.inventory[item] -= qty;
       target.inventory[item] = (target.inventory[item] || 0) + qty;
+      // D-05: the act of giving raises the GIVER's own belonging, not the
+      // recipient's — guard is intentionally !actor.isPlayer, the inverse of
+      // Take/Attack's !target.isPlayer, because this hook adjusts the actor
+      // and the player has mind: null. Every Give already carries
+      // consented: true unconditionally (Take is the codebase's only
+      // coercive-transfer verb), so D-05's "no coercive framing" qualifier
+      // is satisfied by verb identity alone — no extra check needed here.
+      if (!actor.isPlayer) adjustNeed(actor, 'belonging', TUNING.belongingGiveGain, world.tick);
       return { location: actor.location, data: { targetId: target.id, item, quantity: qty, consented: true } };
     }
     case 'Attack': {
@@ -419,6 +436,18 @@ function applyEffects(world, actor, verb, params) {
     }
     case 'Tell': {
       const target = getAgent(world, params.targetId);
+      // D-05: vouching for someone (an is_trustworthy claim) raises the
+      // TELLER's own belonging — same !actor.isPlayer guard direction as
+      // Give above, and the same reasoning. Guard against a missing
+      // params.claim so a malformed Tell can't throw here (checkPreconditions
+      // already requires a claim.predicate to exist, but this hook reads
+      // params.claim independently and shouldn't assume that invariant).
+      // This is separate from applyClaimBelief's existing is_trustworthy
+      // branch (recipient's trust/affection) — that handles the *listener's*
+      // reaction and is untouched by this hook.
+      if (!actor.isPlayer && params.claim && params.claim.predicate === 'is_trustworthy') {
+        adjustNeed(actor, 'belonging', TUNING.belongingVouchGain, world.tick);
+      }
       return { location: actor.location, data: { targetId: target.id, claim: params.claim } };
     }
     case 'Move': {
@@ -2039,6 +2068,92 @@ function runDecayCheck(opts = {}) {
     name: 'needvalue-is-pure',
     pass: needValueIsPure,
     detail: `agents=${purityNpcs.length}, reads=${purityReadsPerformed}, needs unchanged=${needValueIsPure}`,
+  });
+
+  // DECAY-04, check 8: belonging-rises-on-give. Snapshot the giver's stored
+  // belonging record BEFORE a real Give, then compare against the post-Give
+  // record — both read via needValue() at the SAME post-action tick (the
+  // snapshot's baseline value regenerated to that tick with no trigger
+  // applied). Matching the tick this way is what makes the comparison
+  // attributable to the Give hook itself rather than to passive regeneration
+  // that would have happened anyway between the two reads. ROADMAP Phase 3
+  // success criterion 4.
+  const giveWorld = createWorld();
+  giveWorld.driftEnabled = false;
+  seedRng(giveWorld);
+  const giver = giveWorld.agents.mara;
+  const giveTarget = giveWorld.agents.ives;
+  const givePreRecord = { ...giver.mind.needs.belonging };
+  performAction(giveWorld, giver.id, 'Give', { targetId: giveTarget.id, item: 'bread', quantity: 1 });
+  const givePostTick = giver.mind.needs.belonging.tick;
+  const giveBaseline = needValue({ mind: { needs: { belonging: givePreRecord } } }, 'belonging', givePostTick);
+  const giveAfter = needValue(giver, 'belonging', givePostTick);
+  const belongingRisesOnGive = giveAfter > giveBaseline;
+  checks.push({
+    name: 'belonging-rises-on-give',
+    pass: belongingRisesOnGive,
+    detail: `matched tick=${givePostTick}: no-trigger baseline=${giveBaseline}, after real Give=${giveAfter}, TUNING.belongingGiveGain=${TUNING.belongingGiveGain}`,
+  });
+
+  // DECAY-04, check 9: belonging-rises-on-vouch. Same matched-tick shape as
+  // check 8, for a Tell carrying an is_trustworthy claim, plus the negative
+  // half in the same check: a Tell carrying a non-is_trustworthy predicate
+  // (stole_from) must leave the teller's stored belonging record completely
+  // untouched — a delta of exactly 0, not merely "smaller than the vouch
+  // delta" — proving the hook is gated on the predicate, not on Tell itself.
+  const vouchWorld = createWorld();
+  vouchWorld.driftEnabled = false;
+  seedRng(vouchWorld);
+  const teller = vouchWorld.agents.mara;
+  const vouchTarget = vouchWorld.agents.ives;
+  const vouchPreRecord = { ...teller.mind.needs.belonging };
+  performAction(vouchWorld, teller.id, 'Tell', { targetId: vouchTarget.id, claim: { predicate: 'is_trustworthy', subject: vouchTarget.id } });
+  const vouchPostTick = teller.mind.needs.belonging.tick;
+  const vouchBaseline = needValue({ mind: { needs: { belonging: vouchPreRecord } } }, 'belonging', vouchPostTick);
+  const vouchAfter = needValue(teller, 'belonging', vouchPostTick);
+  const vouchDelta = vouchAfter - vouchBaseline;
+  const belongingRisesOnVouch = vouchDelta > 0;
+
+  const nonVouchWorld = createWorld();
+  nonVouchWorld.driftEnabled = false;
+  seedRng(nonVouchWorld);
+  const nonVouchTeller = nonVouchWorld.agents.mara;
+  const nonVouchTarget = nonVouchWorld.agents.ives;
+  const nonVouchBefore = JSON.stringify(nonVouchTeller.mind.needs.belonging);
+  performAction(nonVouchWorld, nonVouchTeller.id, 'Tell', { targetId: nonVouchTarget.id, claim: { predicate: 'stole_from', subject: nonVouchTarget.id, victim: nonVouchTeller.id } });
+  const nonVouchAfter = JSON.stringify(nonVouchTeller.mind.needs.belonging);
+  const nonVouchUnchanged = nonVouchBefore === nonVouchAfter;
+  const nonVouchDelta = nonVouchUnchanged ? 0 : NaN;
+
+  checks.push({
+    name: 'belonging-rises-on-vouch',
+    pass: belongingRisesOnVouch && nonVouchUnchanged,
+    detail: `vouch matched tick=${vouchPostTick}: no-trigger baseline=${vouchBaseline}, after is_trustworthy Tell=${vouchAfter}, delta=${vouchDelta}; non-vouch (stole_from) Tell stored record before=${nonVouchBefore}, after=${nonVouchAfter}, delta=${nonVouchDelta}`,
+  });
+
+  // DECAY-04, check 10: player-give-does-not-throw. The player has mind: null
+  // (makeAgent, isPlayer ? null : {...}), and this plan's Give/Tell hooks
+  // guard on !actor.isPlayer — the inverse of every other adjustNeed guard
+  // in the file, which guards !target.isPlayer instead. This inversion is
+  // the single most likely way this plan breaks the running game, so both
+  // player-actor paths are exercised for real, inside a try/catch, rather
+  // than trusted to a static grep alone.
+  const playerWorld = createWorld();
+  playerWorld.driftEnabled = false;
+  seedRng(playerWorld);
+  const playerTarget = playerWorld.agents.mara;
+  playerWorld.agents.player.inventory.bread = (playerWorld.agents.player.inventory.bread || 0) + 1;
+  let playerGuardError = null;
+  try {
+    performAction(playerWorld, 'player', 'Give', { targetId: playerTarget.id, item: 'bread', quantity: 1 });
+    performAction(playerWorld, 'player', 'Tell', { targetId: playerTarget.id, claim: { predicate: 'is_trustworthy', subject: playerTarget.id } });
+  } catch (err) {
+    playerGuardError = err.message;
+  }
+  checks.push({
+    name: 'player-give-does-not-throw',
+    pass: playerGuardError === null,
+    detail: playerGuardError === null ? 'both player actions completed' : playerGuardError,
   });
 
   return { pass: checks.every(c => c.pass), checks };
