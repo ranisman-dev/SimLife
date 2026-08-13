@@ -118,7 +118,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 03-02-PLAN.md — Needs `{value, tick}` shape + pure `needValue()` accessor + tick-threaded `adjustNeed`, both `sim.js` raw safety reads swapped, the required `presentation.js` consequential fix (four read sites), and the DECAY-03 checks
+- [x] 03-02-PLAN.md — Needs `{value, tick}` shape + pure `needValue()` accessor + tick-threaded `adjustNeed`, both `sim.js` raw safety reads swapped, the required `presentation.js` consequential fix (four read sites), and the DECAY-03 checks
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -200,7 +200,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|-----------------|--------|-----------|
 | 1. Verification Infrastructure | 3/3 | Complete   | 2026-08-12 |
 | 2. Witness Reaction Ordering | 3/4 | In Progress|  |
-| 3. Belief Decay & Needs Regeneration | 1/5 | In Progress|  |
+| 3. Belief Decay & Needs Regeneration | 2/5 | In Progress|  |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
 | 5. Slow Trait Drift | 0/1 | Not started | - |
 | 6. Snap Events | 0/1 | Not started | - |
