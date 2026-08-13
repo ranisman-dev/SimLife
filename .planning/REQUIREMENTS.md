@@ -33,7 +33,7 @@ changing under pressure, plus closing the gaps that currently undercut it.)*
 - [x] **DECAY-02**: A belief tagged "known false" (contradicted by ground truth) is never
       pruned regardless of staleness — pruning only removes genuinely stale, unreinforced
       beliefs
-- [ ] **DECAY-03**: `safety`, `sustenance`, and `belonging` needs regenerate toward
+- [x] **DECAY-03**: `safety`, `sustenance`, and `belonging` needs regenerate toward
       baseline over time and/or via specific triggers, instead of only ever dropping
 - [x] **DECAY-04**: `belonging` has at least one concrete trigger (its first ever mutator)
 - [x] **DECAY-05**: The `safety < 0.7` retreat gate uses a hysteresis band so passive
@@ -114,7 +114,7 @@ changing under pressure, plus closing the gaps that currently undercut it.)*
 | ORDER-02 | Phase 2 | Pending |
 | DECAY-01 | Phase 3 | Complete |
 | DECAY-02 | Phase 3 | Complete |
-| DECAY-03 | Phase 3 | Pending |
+| DECAY-03 | Phase 3 | Complete |
 | DECAY-04 | Phase 3 | Complete |
 | DECAY-05 | Phase 3 | Complete |
 | MEMORY-01 | Phase 4 | Pending |

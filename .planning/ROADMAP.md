@@ -126,7 +126,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 03-04-PLAN.md — Retreat-gate hysteresis band (0.65/0.75) via the read-only `isCurrentlyRetreating()` log scan, the scripted oscillation checks, and the ORDER-01 qualitative regression verification under live D-04 + D-07
+- [x] 03-04-PLAN.md — Retreat-gate hysteresis band (0.65/0.75) via the read-only `isCurrentlyRetreating()` log scan, the scripted oscillation checks, and the ORDER-01 qualitative regression verification under live D-04 + D-07
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -200,7 +200,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|-----------------|--------|-----------|
 | 1. Verification Infrastructure | 3/3 | Complete   | 2026-08-12 |
 | 2. Witness Reaction Ordering | 3/4 | In Progress|  |
-| 3. Belief Decay & Needs Regeneration | 3/5 | In Progress|  |
+| 3. Belief Decay & Needs Regeneration | 4/5 | In Progress|  |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
 | 5. Slow Trait Drift | 0/1 | Not started | - |
 | 6. Snap Events | 0/1 | Not started | - |
