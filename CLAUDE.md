@@ -20,8 +20,11 @@ python3 -m http.server 8000
 ```
 
 then visit `http://localhost:8000/index.html`. Opening `index.html` directly as a
-`file://` URL also works — there's no server-side code. There is no test suite, linter,
-or build command in this repo.
+`file://` URL also works — there's no server-side code. There is still no linter and
+no build step, and no test *suite* in the conventional sense, but `node scripts/verify.js`
+is a committed, repeatable regression check with a `--update-baseline` golden-master
+workflow, and as of Phase 2 it also runs the witness-ordering checks and prints the
+pre-fix → current ordering diff.
 
 ## File layout and the rule that keeps it that way
 
@@ -43,11 +46,16 @@ separation when editing.
 **Action pipeline.** `performAction(world, actorId, verb, params)` is the single
 entry point both the player (via `parser.js`) and NPCs (via `decideAndAct`) call.
 Flow: `checkPreconditions` → `applyEffects` → push an `event` onto `world.events` →
-`computeWitnesses` → `perceiveEvent` for each witness. `perceiveEvent` is where a
-witnessed event turns into a memory + a 100%-confidence belief, and where NPCs run
-their own react loop — capped by `MAX_REACTION_DEPTH` (4) via a module-level
-`reactionDepth` counter, since one action can cascade into witnesses reacting, which
-can itself generate new witnessed events.
+`computeWitnesses` → `orderWitnesses` → `perceiveEvent` for each witness, highest
+urgency first. `orderWitnesses` scores every witness's candidate reactions with the
+pure `scoreCandidates()` and sorts descending; witnesses whose appraisal falls in
+`decideAndAct`'s no-reaction band sort last; ties fall back to `agentsAt` list order
+via a stable sort, with no randomness involved anywhere in ordering. The resulting
+sequence is recorded on the event as `event.witnessOrder` for inspection.
+`perceiveEvent` is where a witnessed event turns into a memory + a 100%-confidence
+belief, and where NPCs run their own react loop — capped by `MAX_REACTION_DEPTH` (4)
+via a module-level `reactionDepth` counter, since one action can cascade into
+witnesses reacting, which can itself generate new witnessed events.
 
 **The mind boxes.** An NPC's `mind` object (the player has `mind: null`) holds nine
 pieces, each with distinct mutability and decay rules — this is the part most bugs
@@ -79,11 +87,17 @@ discounted/boosted by `findConflictingBeliefs()`); a worldview entry is a durabl
 conviction about how the world works in general ("might is right"), not tied to any
 one incident.
 
-**Decide/act.** `decideAndAct()` is a small utility-AI: it scores candidate reactions
-(do nothing / attack / press for explanation / tell a confidant / retreat) from the
-witness's current relationship, emotion, and worldview state, and takes the
-highest-scoring one. `witness.mind.log` records what was considered and why, for the
-in-app mind inspector.
+**Decide/act.** `decideAndAct()` is a small utility-AI built on top of a separate pure
+`scoreCandidates()` (no mutation, no RNG draws, safe to call more than once), which
+both `decideAndAct()` and `orderWitnesses()` call. `scoreCandidates()` scores
+candidate reactions (do nothing / attack / press for explanation / tell a confidant /
+retreat) from the witness's current relationship, emotion, and worldview state;
+`decideAndAct()` picks the top candidate, resolves it, and fires it. The "tell a
+confidant" candidate's honesty flip and scapegoat pick are deferred into a `resolve()`
+hook (backed by the named `resolveGossipTell()` helper), which runs only for the
+winning candidate, so merely considering gossip no longer consumes randomness.
+`witness.mind.log` records what was considered and why, for the in-app mind
+inspector.
 
 ## Known gaps (see PERSON-MODEL.md for the full list)
 
@@ -145,7 +159,7 @@ than flavor text.
 - Lockfile: not applicable (no packages to lock).
 ## Frameworks
 - None. `presentation.js` does direct DOM manipulation (`document.getElementById`, `.innerHTML` template strings, manual event listeners) with no view framework (no React/Vue/Svelte).
-- None. No test runner, no test files, no assertion library. `CLAUDE.md` states explicitly: "There is no test suite, linter, or build command in this repo." The only verification observed is ad-hoc Node `require()` smoke checks (see `.claude/settings.local.json`), not a formal test suite.
+- None. No test runner, no test files, no assertion library, no test suite in the conventional sense. `CLAUDE.md` §"Running it" documents `node scripts/verify.js` as the committed, repeatable regression check (golden-master diff plus witness-ordering checks) that stands in for a formal test suite.
 - None. No bundler (no Webpack/Vite/esbuild/Rollup), no transpiler (no Babel/TypeScript compiler), no CSS preprocessor, no linter/formatter config (no `.eslintrc*`, no `.prettierrc*`).
 - Dev server is any static file server; `CLAUDE.md` and `README.md` both document `python3 -m http.server 8000` as the convention. Opening `index.html` directly via `file://` also works since there is zero server-side code.
 ## Key Dependencies
