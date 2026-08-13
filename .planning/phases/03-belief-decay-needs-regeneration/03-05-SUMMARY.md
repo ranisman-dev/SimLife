@@ -46,10 +46,16 @@ key-decisions:
   - "Task 3's human browser checkpoint could not be reached in this session (no interactive human channel) -- persisted as 03-05-HUMAN-UAT.md following the Phase 2 02-04-HUMAN-UAT.md precedent exactly (status: partial, one pending test, all 9 how-to-verify steps preserved verbatim), per the plan's own documented output fallback."
   - "STATE.md, ROADMAP.md, and REQUIREMENTS.md were not modified by this plan -- worktree/parallel-executor convention reserves shared-artifact writes for the orchestrator after all wave agents complete; requirement marking (DECAY-01..05) is deferred to that step."
 
-requirements-completed: [DECAY-01, DECAY-02, DECAY-03, DECAY-04, DECAY-05]
+# DECAY-01/02/04/05 already marked complete by plans 01/03/04. DECAY-03's
+# remaining evidence (safety visibly dropping/recovering by eye) is exactly
+# what the deferred Task 3 human checkpoint covers -- see 03-05-HUMAN-UAT.md.
+# Deliberately left empty here, matching 03-02-SUMMARY.md's own precedent
+# for not claiming a requirement complete before its verification gate is
+# satisfied.
+requirements-completed: []
 
 # Metrics
-duration: ~35min
+duration: 10min
 completed: 2026-08-13
 ---
 
@@ -59,9 +65,9 @@ completed: 2026-08-13
 
 ## Performance
 
-- **Duration:** ~35 min
-- **Started:** 2026-08-13T02:5x (worktree base commit `bfb294a`)
-- **Completed:** 2026-08-13T03:05:18Z
+- **Duration:** 10 min
+- **Started:** 2026-08-12T21:57:56-05:00 (worktree base commit `bfb294a`)
+- **Completed:** 2026-08-12T22:07:23-05:00
 - **Tasks:** 2 of 3 completed (Task 3 is the deferred human checkpoint)
 - **Files modified:** 4 (`scripts/baseline.json`, `scripts/order-baseline.json`, `PERSON-MODEL.md`, `CLAUDE.md`) + 1 created (`03-05-HUMAN-UAT.md`)
 
