@@ -205,7 +205,6 @@ function performAction(world, actorId, verb, params = {}, opts = {}) {
     why: opts.why || null, // readable summary of the top traits/values/worldview terms that drove this choice, for display only
   };
   world.events.push(event);
-  regenerateNeeds(world);
 
   const witnesses = computeWitnesses(world, event);
   witnesses.forEach(w => perceiveEvent(world, w, event));
@@ -264,10 +263,6 @@ function applyEffects(world, actor, verb, params) {
         adjustNeed(target, 'sustenance', -0.4);
         upsertGoal(target, 'ReplenishFood', null, 0.4, world.tick, 'future');
       }
-      if (!actor.isPlayer && item === 'bread' && qty > 0) {
-        adjustNeed(actor, 'sustenance', qty * 0.15);
-        resolveReplenishFood(actor, world.tick);
-      }
       return { location: actor.location, data: { targetId: target.id, item, quantity: qty, consented: false } };
     }
     case 'Give': {
@@ -276,10 +271,6 @@ function applyEffects(world, actor, verb, params) {
       const qty = Math.min(params.quantity || 1, actor.inventory[item] || 0);
       actor.inventory[item] -= qty;
       target.inventory[item] = (target.inventory[item] || 0) + qty;
-      if (!target.isPlayer && item === 'bread' && qty > 0) {
-        adjustNeed(target, 'sustenance', qty * 0.15);
-        resolveReplenishFood(target, world.tick);
-      }
       return { location: actor.location, data: { targetId: target.id, item, quantity: qty, consented: true } };
     }
     case 'Attack': {
@@ -313,17 +304,6 @@ function adjustNeed(agent, needName, delta) {
   agent.mind.needs[needName] = clamp((agent.mind.needs[needName] ?? 1) + delta, 0, 1);
 }
 
-// A sense of safety fades back in on its own once nothing keeps reinforcing
-// the fear — small passive drift per tick, distinct from sustenance and
-// belonging, neither of which recover just because time passed (you don't
-// get less hungry or less lonely by doing nothing).
-function regenerateNeeds(world) {
-  Object.values(world.agents).forEach(agent => {
-    if (agent.isPlayer || !agent.alive) return;
-    adjustNeed(agent, 'safety', 0.015);
-  });
-}
-
 function pushEmotion(agent, emotion, targetId, intensity, tick) {
   agent.mind.emotions.push({ emotion, target: targetId, intensity, tick });
   if (agent.mind.emotions.length > 20) agent.mind.emotions.shift();
@@ -350,29 +330,6 @@ function memoryStrengthForEvent(agent, eventId, currentTick) {
   return mem ? memoryStrength(mem, currentTick) : 0; // no memory record left = genuinely forgotten
 }
 
-// appraiseEvent() only scores Take/Attack/Give, so a Tell's impact is always
-// 0 and its memory always formed at the floor regardless of what was actually
-// said. Conversation memories should instead inherit some signal from the
-// claim itself: what's alleged, and whether it concerns the witness at all.
-const TELL_CLAIM_SEVERITY = {
-  is_dead: 0.9,
-  attacked: 0.7,
-  stole_from: 0.7,
-  provoked: 0.4,
-  is_dangerous: 0.35,
-  is_trustworthy: 0.25,
-};
-
-function memoryImportanceForTell(witness, event) {
-  const claim = event.data.claim;
-  let importance = TELL_CLAIM_SEVERITY[claim.predicate] ?? 0.15;
-  // Gossip about a stranger is forgettable; a claim naming the witness
-  // themself — as subject, victim, or the one being spoken to — isn't.
-  if (claim.subject === witness.id || claim.victim === witness.id) importance += 0.2;
-  if (event.data.targetId === witness.id) importance += 0.1;
-  return clamp(importance, 0.1, 1);
-}
-
 function addMemory(agent, eventId, tick, importance) {
   // Trivial old memories quietly drop out as new ones form — nothing sits
   // around forever just because it happened once.
@@ -392,20 +349,6 @@ function upsertGoal(agent, type, targetId, priority, tick, bucket = 'current', e
 
 function resolveGoal(agent, type, targetId) {
   agent.mind.goals.current = agent.mind.goals.current.filter(g => !(g.type === type && g.target === targetId));
-}
-
-// ReplenishFood has no target (it's a need, not a grievance against someone),
-// so it doesn't fit reassessGoals' relationship-driven settle/dormant pattern.
-// It settles directly off the need it exists to track: once sustenance is
-// comfortably above half, whatever bread came in was enough.
-function resolveReplenishFood(agent, tick) {
-  if (agent.mind.needs.sustenance <= 0.5) return;
-  const had = agent.mind.goals.current.some(g => g.type === 'ReplenishFood') ||
-              agent.mind.goals.future.some(g => g.type === 'ReplenishFood');
-  if (!had) return;
-  agent.mind.goals.current = agent.mind.goals.current.filter(g => g.type !== 'ReplenishFood');
-  agent.mind.goals.future = agent.mind.goals.future.filter(g => g.type !== 'ReplenishFood');
-  agent.mind.log.push({ tick, trigger: 'goal ReplenishFood', considered: [], chose: 'settled — ate enough to stop worrying about food' });
 }
 
 // A settled debt is just gone. A merely-let-go one isn't forgotten, only
@@ -481,10 +424,7 @@ function perceiveEvent(world, witnessId, event) {
   if (witness.isPlayer) return; // player forms their own beliefs implicitly via the UI/event log
 
   const appraisal = appraiseEvent(world, witness, event);
-  const importance = event.verb === 'Tell'
-    ? memoryImportanceForTell(witness, event)
-    : clamp(Math.abs(appraisal.impact), 0.1, 1);
-  addMemory(witness, event.id, event.tick, importance);
+  addMemory(witness, event.id, event.tick, clamp(Math.abs(appraisal.impact), 0.1, 1));
 
   witness.mind.beliefs.push({
     id: `${witnessId}-ev${event.id}`,
@@ -505,10 +445,6 @@ function perceiveEvent(world, witnessId, event) {
   applyAppraisal(world, witness, event, appraisal);
 
   if (event.verb === 'Tell' && event.data.targetId === witnessId) {
-    // Being spoken to directly is itself a small social-inclusion signal,
-    // independent of whether what's said is flattering — being ignored hurts
-    // belonging; being gossiped about at least means you're not invisible.
-    adjustNeed(witness, 'belonging', 0.05);
     const trust = relOf(witness, event.actor).trust;
     // GeneralizedTrust is deliberately a different lever than relationship trust
     // above — general credulity toward testimony, not standing toward this
@@ -565,10 +501,6 @@ function applyAppraisal(world, witness, event, appraisal) {
 
   rel.trust = clamp(rel.trust + impact * 0.3, 0, 1);
   rel.affection = clamp(rel.affection + impact * 0.25, -1, 1);
-  // Belonging is about the witness's own standing, not sympathy for someone
-  // else's — only moves when it happened to them directly (being helped
-  // reaffirms it, being wronged personally puts a dent in it).
-  if (appraisal.isVictim) adjustNeed(witness, 'belonging', impact * 0.1);
 
   if (impact < 0) {
     rel.grievance = clamp(rel.grievance - impact * 0.4, 0, 5);
