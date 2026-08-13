@@ -58,12 +58,19 @@ const TUNING = {
   // to diverge. addMemory's own inline 0.03 is intentionally left as-is per
   // D-07 (pre-existing constants aren't retrofitted into TUNING).
   beliefPruneFloor: 0.03,
-  // PROVISIONAL — finalized in Plan 03-05 Task 1. Asymptotic-approach rate
-  // for needValue()'s regeneration formula (D-04). Coupled to Phase 2's
-  // LOCKED ORDER_SPEC fixture: the victim's safety drops to 0.6 there, and
-  // how fast it climbs back across Plan 03-04's hysteresis band can change
-  // which witnesses produce a retreat candidate, which feeds orderWitnesses'
-  // ranking. Do not tune this value against this plan's checks in isolation.
+  // Asymptotic-approach rate for needValue()'s regeneration formula (D-04).
+  // VERIFIED against Phase 2's LOCKED ORDER_SPEC fixture by Plan 03-04 Task
+  // 3, with both D-04 (this rate) and D-07 (the retreat-gate hysteresis
+  // band) live for the first time together: all four ORDER-01 qualitative
+  // checks (dispatch-order-differs-from-agent-list, victim-dispatched-first,
+  // victim-retaliates-first, indifferent-witness-dispatched-last) and all
+  // fourteen DECAY-01..05 checks passed at this value on the first build —
+  // no rate was rejected, no tuning was needed. garrick's origin-event
+  // decision (attack player=0.74 vs tell mara about player=0.58) came out
+  // byte-identical to 02-03-SUMMARY.md's recorded pre-Phase-3 margin. Plan
+  // 03-05 still owns the final golden-master re-bless (the baseline JSON
+  // files themselves), but the rate itself is locked as of this plan, not
+  // provisional.
   needRegenRate: 0.02,
   // belonging's first-ever triggers (D-05): the only two positive need
   // deltas anywhere in this file — every other adjustNeed call site
@@ -74,6 +81,18 @@ const TUNING = {
   // connection than parting with an item from your own inventory.
   belongingGiveGain: 0.08,
   belongingVouchGain: 0.05,
+  // D-07: two-threshold hysteresis band around the old flat `safety < 0.7`
+  // retreat cutoff, symmetric +/-0.05. Enter = the threshold a witness who is
+  // NOT currently retreating for safety reasons must drop below to START
+  // retreating. Exit = the (looser) threshold a witness who IS currently
+  // retreating must rise back ABOVE before safety stops gating them in. A
+  // witness inside [retreatSafetyEnter, retreatSafetyExit] keeps whatever
+  // retreating-for-safety state it already had — that persistence through the
+  // band is the whole point (ROADMAP Phase 3 success criterion 5: does not
+  // flicker every tick). Do not transpose these two names — Enter is the
+  // stricter (lower) value, Exit is the looser (higher) one.
+  retreatSafetyEnter: 0.65,
+  retreatSafetyExit: 0.75,
 };
 
 // The always-reproducible seed seedRng() uses when no explicit seed is
@@ -1153,6 +1172,58 @@ function explainTerms(terms) {
 // are a deterministic function of the witness's DangerousWorld worldview
 // weight, not of when they were created — so creating them earlier changes
 // no value anywhere.
+//
+// D-07's hysteresis needs to know whether a witness is CURRENTLY retreating
+// for safety reasons, and it must learn that without scoreCandidates itself
+// writing anything (scoreCandidates is called twice per witness per event —
+// once in orderWitnesses' read-only ranking pre-pass, once again in
+// decideAndAct's real dispatch — and a write here would execute during the
+// pre-pass and corrupt dispatch ranking; see the file-top note on
+// scoreCandidates's purity and 02-03-SUMMARY.md's "Next Phase Readiness").
+// So this reads state that only decideAndAct ever writes: the
+// `retreatForSafety` marker on a witness's own mind.log entries (added to
+// the winner-log write below, in decideAndAct).
+//
+// The marker discriminates WHY retreat won, not just THAT it won — the
+// retreat gate is a three-way disjunction (rel.fear > 0.3 || <safety
+// condition> || fearEmotion > 0.2), so a retreat candidate can win on fear
+// alone at high safety. A scan for "the last entry that chose retreat"
+// cannot tell that apart from a safety-driven retreat, and would wrongly
+// latch a fear-driven witness onto the looser Exit threshold for later
+// safety-only scoring.
+//
+// Latch semantics (must match this exactly — see 03-04-PLAN.md's Task 1
+// for the full reasoning):
+//   - Most recent entry carries `retreatForSafety: true` (retreat won on the
+//     safety term) -> true -> stays gated in through the band up to Exit.
+//   - Most recent entry carries `retreatForSafety: false` (retreat won on
+//     fear alone, OR a later winner entry where retreat did not win at all,
+//     including because safety rose above Exit and the retreat candidate
+//     stopped existing) -> false -> back on the stricter Enter threshold.
+//   - No-reaction ("do nothing"/"barely noticed") log entries never carry
+//     this property at all and are skipped by the backward scan, so an
+//     indifferent reaction cannot silently clear a real retreating latch.
+//   - Known, accepted residue: if a latched witness's safety rises above
+//     Exit and every subsequent decision produces only a no-reaction entry
+//     (or logs nothing at all, whenever appraisal.impact >= 0), the latch
+//     stays true until the next winner entry — nothing that writes only from
+//     decideAndAct can close that unlogged window, and a `mind` field would
+//     have the identical hole. Accepted rather than chased with a sweep or a
+//     write from scoreCandidates.
+//
+// Strictly read-only: no writes to agent/agent.mind/the log, no memoization,
+// no cached field. Returns false (never throws) for a null/absent mind
+// (the player) or an empty log, since the ordering pre-pass evaluates
+// witnesses broadly, including the player.
+function isCurrentlyRetreating(agent) {
+  if (!agent || !agent.mind || !Array.isArray(agent.mind.log)) return false;
+  const log = agent.mind.log;
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (log[i].retreatForSafety !== undefined) return log[i].retreatForSafety === true;
+  }
+  return false;
+}
+
 function scoreCandidates(world, witness, event, appraisal, priorRelationship) {
   const { boldness, extraversion, agreeableness, conscientiousness } = witness.mind.personality;
 
@@ -1295,7 +1366,16 @@ function scoreCandidates(world, witness, event, appraisal, priorRelationship) {
 
   const fearEmotion = activeEmotionIntensity(witness, 'Fear', actorId, event.tick);
   const safety = needValue(witness, 'safety', event.tick);
-  if (rel.fear > 0.3 || safety < 0.7 || fearEmotion > 0.2) {
+  // D-07: which threshold applies depends on whether this witness is already
+  // retreating for safety reasons — a witness already gated in stays gated
+  // in through the whole [Enter, Exit] band, a witness not yet gated in only
+  // opens the gate below the stricter Enter threshold. isCurrentlyRetreating
+  // only ever reads a marker decideAndAct writes (see its own comment above),
+  // so this stays a pure read here too. The other two disjuncts (fear,
+  // fearEmotion) are untouched by D-07 — the band governs the safety term
+  // only.
+  const safetyGate = isCurrentlyRetreating(witness) ? safety < TUNING.retreatSafetyExit : safety < TUNING.retreatSafetyEnter;
+  if (rel.fear > 0.3 || safetyGate || fearEmotion > 0.2) {
     // Valuing Safety highly makes the pull to get away from danger stronger on top
     // of how scared the witness actually is right now.
     const retreatTerms = {
@@ -1309,6 +1389,13 @@ function scoreCandidates(world, witness, event, appraisal, priorRelationship) {
       label: 'retreat',
       score: retreatScore,
       terms: retreatTerms,
+      // Plain data on the returned candidate — not a write to witness/world/
+      // any state, so scoreCandidates stays pure. Carries WHY the retreat
+      // gate opened: this candidate can win on fear alone even when
+      // safetyGate is false, and a retreat that won on fear alone is NOT the
+      // same state as one that won on low safety (see isCurrentlyRetreating's
+      // comment above scoreCandidates).
+      safetyDriven: safetyGate,
     });
   }
 
@@ -1357,6 +1444,14 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
     considered: candidates.map(c => `${c.label}=${c.score.toFixed(2)}`),
     chose: resolved.label,
     why,
+    // D-07: the only write in the hysteresis mechanism, and it lives here —
+    // where log writes already live — precisely because orderWitnesses'
+    // pre-pass never calls decideAndAct, so this can never execute during
+    // ranking. Records WHY retreat won (not just that it did): true only
+    // when retreat both won AND won on the safety term specifically
+    // (best.safetyDriven, set on the candidate in scoreCandidates above).
+    // isCurrentlyRetreating() is the sole reader of this property.
+    retreatForSafety: best.label === 'retreat' && best.safetyDriven === true,
   });
 
   if (resolved.action) resolved.action(why);
@@ -2156,6 +2251,190 @@ function runDecayCheck(opts = {}) {
     detail: playerGuardError === null ? 'both player actions completed' : playerGuardError,
   });
 
+  // DECAY-05, checks 11-14: two-threshold retreat-gate hysteresis (D-07) plus
+  // a fear-driven discrimination check. Checks 11-13 share one deterministic
+  // world/witness/probe-event trio; check 11 runs BEFORE any retreat history
+  // is established (so isCurrentlyRetreating reads false), checks 12-13 run
+  // AFTER (a synthetic history entry is pushed once, between checks 11 and
+  // 12) — this is what "the same witness-with-history" in check 13's own
+  // comment refers to. Check 14 needs an entirely separate world: it's the
+  // only one of the four that deliberately runs fear HIGH rather than low.
+  //
+  // The probe event is hand-built and never passed through performAction —
+  // appraiseEvent/scoreCandidates only ever READ an event object's fields,
+  // so a probe event that never touches world.events/world.tick cannot
+  // pollute world state or trigger a real reaction cascade. It targets the
+  // witness herself (isVictim: true) so appraisal.impact is strongly
+  // negative regardless of any other agent's incidental relationship
+  // numbers, keeping `reacts` (impact < -0.05) true at every sample without
+  // depending on default-relationship values.
+  const hystWorld = createWorld();
+  hystWorld.driftEnabled = false;
+  seedRng(hystWorld, DEFAULT_SEED);
+  const hystWitness = hystWorld.agents.tomas;
+  const hystActorId = 'garrick';
+  const hystEvent = { id: 90001, actor: hystActorId, verb: 'Attack', data: { targetId: hystWitness.id }, tick: 0, location: 'square' };
+  const hystAppraisal = appraiseEvent(hystWorld, hystWitness, hystEvent);
+  const hystPriorRel = { ...relOf(hystWitness, hystActorId) };
+
+  // Harness precondition, asserted rather than assumed: the safety disjunct
+  // must be the ONLY disjunct capable of opening the gate, or every sample
+  // below would pass vacuously regardless of the band.
+  const hystRelFear = relOf(hystWitness, hystActorId).fear;
+  const hystFearEmotionAtStart = activeEmotionIntensity(hystWitness, 'Fear', hystActorId, hystEvent.tick);
+  const hystPreconditionsHold = hystRelFear <= 0.3 && hystFearEmotionAtStart <= 0.2 && hystAppraisal.impact < -0.05;
+
+  // Sets safety to an exact value V at tick t (adjustNeed regenerates first,
+  // then applies the delta needed to land exactly on V — see adjustNeed's
+  // own comment), then scores at that same tick t so needValue returns
+  // exactly V and passive regeneration cannot confound the sample.
+  function sampleRetreatPresence(world, witness, event, appraisal, priorRel, safetyValue, tick) {
+    event.tick = tick;
+    adjustNeed(witness, 'safety', safetyValue - needValue(witness, 'safety', tick), tick);
+    const { candidates } = scoreCandidates(world, witness, event, appraisal, priorRel);
+    return candidates.some(c => c.label === 'retreat');
+  }
+
+  if (!hystPreconditionsHold) {
+    const failDetail = `harness precondition failed: rel.fear=${hystRelFear} (want <=0.3), fearEmotion=${hystFearEmotionAtStart} (want <=0.2), appraisal.impact=${hystAppraisal.impact} (want <-0.05)`;
+    checks.push({ name: 'hysteresis-enter-threshold-holds', pass: false, detail: failDetail });
+    checks.push({ name: 'hysteresis-persists-in-band', pass: false, detail: failDetail });
+    checks.push({ name: 'hysteresis-exit-threshold-holds', pass: false, detail: failDetail });
+  } else {
+    // Check 11: no retreat history yet (mind.log is still empty at this
+    // point) -> isCurrentlyRetreating is false -> the stricter Enter
+    // threshold applies. 0.72 and 0.60 alone pass or fail identically under
+    // either the old flat 0.7 cutoff or the new 0.65 Enter threshold; the
+    // 0.68 sample is what actually discriminates the two, since it's below
+    // the old 0.7 cutoff but still above the new 0.65 Enter threshold.
+    const enterAt072 = sampleRetreatPresence(hystWorld, hystWitness, hystEvent, hystAppraisal, hystPriorRel, 0.72, 10);
+    const enterAt068 = sampleRetreatPresence(hystWorld, hystWitness, hystEvent, hystAppraisal, hystPriorRel, 0.68, 11);
+    const enterAt060 = sampleRetreatPresence(hystWorld, hystWitness, hystEvent, hystAppraisal, hystPriorRel, 0.60, 12);
+    const enterHolds = !enterAt072 && !enterAt068 && enterAt060;
+    checks.push({
+      name: 'hysteresis-enter-threshold-holds',
+      pass: enterHolds,
+      detail: `no-history witness: safety=0.72 -> retreat present=${enterAt072}; safety=0.68 -> retreat present=${enterAt068}; safety=0.60 -> retreat present=${enterAt060} (TUNING.retreatSafetyEnter=${TUNING.retreatSafetyEnter})`,
+    });
+
+    // Establish "currently retreating for safety" state the way decideAndAct
+    // itself would leave it — a harness seeding the documented state
+    // representation, not a second write path into the mechanism. The
+    // retreatForSafety: true property is mandatory: it's what
+    // isCurrentlyRetreating reads; omitting it would read as NOT retreating
+    // and turn checks 12-13 into vacuous passes.
+    hystWitness.mind.log.push({
+      tick: 12, trigger: 'harness-seeded retreat history', considered: ['retreat=0.50', 'do nothing=0.05'],
+      chose: 'retreat', retreatForSafety: true,
+    });
+
+    // Check 12: hysteresis-persists-in-band. Scripted oscillation across five
+    // successive ticks, all inside [Enter, Exit] — ROADMAP Phase 3 success
+    // criterion 5 stated directly: "does not flicker between retreat and
+    // non-retreat every tick." isCurrentlyRetreating stays true throughout
+    // (nothing in this loop writes to mind.log), so the looser Exit
+    // threshold (0.75) applies at every sample, and every sample in the
+    // sequence is < 0.75.
+    const bandSequence = [0.66, 0.72, 0.68, 0.74, 0.66];
+    const bandTicks = [20, 21, 22, 23, 24];
+    const bandPresence = bandSequence.map((v, i) => sampleRetreatPresence(hystWorld, hystWitness, hystEvent, hystAppraisal, hystPriorRel, v, bandTicks[i]));
+    const bandTransitions = bandPresence.reduce((count, present, i) => (i === 0 ? 0 : count + (present !== bandPresence[i - 1] ? 1 : 0)), 0);
+    const bandHolds = bandPresence.every(p => p === true) && bandTransitions === 0;
+    checks.push({
+      name: 'hysteresis-persists-in-band',
+      pass: bandHolds,
+      detail: `witness-with-history, sequence=${bandSequence.join(',')}: present=${bandPresence.join(',')}, transitions=${bandTransitions} (TUNING.retreatSafetyEnter=${TUNING.retreatSafetyEnter}, TUNING.retreatSafetyExit=${TUNING.retreatSafetyExit})`,
+    });
+
+    // Check 13: hysteresis-exit-threshold-holds. Same witness-with-history,
+    // sampled above the Exit threshold -> the retreat candidate must
+    // disappear.
+    const exitAt078 = sampleRetreatPresence(hystWorld, hystWitness, hystEvent, hystAppraisal, hystPriorRel, 0.78, 30);
+    checks.push({
+      name: 'hysteresis-exit-threshold-holds',
+      pass: exitAt078 === false,
+      detail: `witness-with-history: safety=0.78 -> retreat present=${exitAt078} (TUNING.retreatSafetyExit=${TUNING.retreatSafetyExit})`,
+    });
+  }
+
+  // Check 14: fear-driven-retreat-does-not-latch-safety. The discrimination
+  // check — the only one of the four that deliberately runs fear HIGH rather
+  // than low. Entirely separate world: a fear-driven regime would corrupt
+  // checks 11-13's low-fear precondition if it shared their witness/world.
+  const hyst4World = createWorld();
+  hyst4World.driftEnabled = false;
+  seedRng(hyst4World, DEFAULT_SEED);
+  const hyst4Npcs = Object.values(hyst4World.agents).filter(a => !a.isPlayer);
+  // SELECT the lowest-boldness NPC so retreat can outscore attack (a bolder
+  // witness's confront candidate discounts fear far less) — never assign to
+  // personality itself, which CLAUDE.md documents as set once in
+  // createWorld() and never mutated.
+  const hyst4Witness = hyst4Npcs.reduce((min, a) => (a.mind.personality.boldness < min.mind.personality.boldness ? a : min), hyst4Npcs[0]);
+  const hyst4ActorId = hyst4Npcs.find(a => a.id !== hyst4Witness.id).id;
+  const hyst4Event = { id: 90002, actor: hyst4ActorId, verb: 'Attack', data: { targetId: hyst4Witness.id }, tick: 0, location: 'square' };
+
+  // (a) Safety high, fear high enough that retreat wins on the fear disjunct
+  // alone. rel.fear/the Fear emotion are raised directly as harness setup —
+  // not through the write path being verified, which is only the log entry
+  // produced in step (b) below.
+  adjustNeed(hyst4Witness, 'safety', 0.95 - needValue(hyst4Witness, 'safety', 0), 0);
+  relOf(hyst4Witness, hyst4ActorId).fear = 1;
+  pushEmotion(hyst4Witness, 'Fear', hyst4ActorId, 5, 0);
+  const hyst4SafetyAtDecision = needValue(hyst4Witness, 'safety', 0);
+  const hyst4SafetyPreconditionHolds = hyst4SafetyAtDecision >= 0.9;
+
+  // (b) Produce the log entry through the REAL write path — a direct
+  // decideAndAct(...) call built the way orderWitnesses builds
+  // appraisal/priorRelationship, per this plan's explicitly sanctioned
+  // alternative to performAction. NOT hand-pushed: a synthetic entry would
+  // make this check pass vacuously in exactly the way it exists to prevent.
+  const hyst4Appraisal = appraiseEvent(hyst4World, hyst4Witness, hyst4Event);
+  const hyst4PriorRel = { ...relOf(hyst4Witness, hyst4ActorId) };
+  decideAndAct(hyst4World, hyst4Witness, hyst4Event, hyst4Appraisal, hyst4PriorRel);
+  const hyst4DecisionEntry = hyst4Witness.mind.log[hyst4Witness.mind.log.length - 1];
+  const hyst4RetreatWon = !!hyst4DecisionEntry && hyst4DecisionEntry.chose === 'retreat';
+
+  let hyst4Check;
+  if (!hyst4SafetyPreconditionHolds) {
+    hyst4Check = { pass: false, detail: `harness precondition failed: safety at decision=${hyst4SafetyAtDecision} (want >=0.9)` };
+  } else if (!hyst4RetreatWon) {
+    hyst4Check = {
+      pass: false,
+      detail: `retreat did not win the fear-driven decision: chose="${hyst4DecisionEntry ? hyst4DecisionEntry.chose : '(no entry logged)'}", considered=${hyst4DecisionEntry ? hyst4DecisionEntry.considered.join(' | ') : '(none)'}`,
+    };
+  } else {
+    // (c) retreat won, but not for safety -- assert the marker says so.
+    const hyst4RetreatForSafety = hyst4DecisionEntry.retreatForSafety;
+
+    // (d) Return fear to a quiet regime (cleared directly, not waited out —
+    // both are sanctioned by the plan), set safety to exactly 0.70 (inside
+    // the band) at the sample tick, and score: a witness correctly NOT
+    // latched onto the Exit threshold must show no retreat candidate here.
+    relOf(hyst4Witness, hyst4ActorId).fear = 0.2;
+    hyst4Witness.mind.emotions = hyst4Witness.mind.emotions.filter(e => !(e.emotion === 'Fear' && e.target === hyst4ActorId));
+    const hyst4QuietTick = 50;
+    const hyst4QuietFear = relOf(hyst4Witness, hyst4ActorId).fear;
+    const hyst4QuietFearEmotion = activeEmotionIntensity(hyst4Witness, 'Fear', hyst4ActorId, hyst4QuietTick);
+    const hyst4QuietPreconditionHolds = hyst4QuietFear <= 0.3 && hyst4QuietFearEmotion <= 0.2;
+
+    if (!hyst4QuietPreconditionHolds) {
+      hyst4Check = {
+        pass: false,
+        detail: `quiet-regime precondition failed: rel.fear=${hyst4QuietFear} (want <=0.3), fearEmotion=${hyst4QuietFearEmotion} (want <=0.2)`,
+      };
+    } else {
+      adjustNeed(hyst4Witness, 'safety', 0.70 - needValue(hyst4Witness, 'safety', hyst4QuietTick), hyst4QuietTick);
+      hyst4Event.tick = hyst4QuietTick;
+      const { candidates: hyst4QuietCandidates } = scoreCandidates(hyst4World, hyst4Witness, hyst4Event, hyst4Appraisal, hyst4PriorRel);
+      const hyst4RetreatAtQuiet070 = hyst4QuietCandidates.some(c => c.label === 'retreat');
+      hyst4Check = {
+        pass: hyst4RetreatForSafety === false && hyst4RetreatAtQuiet070 === false,
+        detail: `fear-driven decision: safety=${hyst4SafetyAtDecision}, chose="${hyst4DecisionEntry.chose}", retreatForSafety=${hyst4RetreatForSafety}; quiet-regime sample: fear=${hyst4QuietFear}, fearEmotion=${hyst4QuietFearEmotion}, safety=0.70 -> retreat present=${hyst4RetreatAtQuiet070}`,
+      };
+    }
+  }
+  checks.push({ name: 'fear-driven-retreat-does-not-latch-safety', pass: hyst4Check.pass, detail: hyst4Check.detail });
+
   return { pass: checks.every(c => c.pass), checks };
 }
 
@@ -2176,6 +2455,7 @@ const Sim = {
   getAgent,
   appraiseEvent,
   scoreCandidates,
+  isCurrentlyRetreating,
   memoryStrength,
   beliefConfidence,
   needValue,
