@@ -61,7 +61,7 @@ hooks. Skim it before touching belief/relationship/decision logic. Summary:
 | `worldview` (from `Sim.WORLDVIEW_BELIEFS` bank) | never | static |
 | `beliefs` (situational stances, not memories) | confidence can be revised | never — array only grows |
 | `memories` (episodic pointers into `world.events`) | — | yes, computed live (`memoryStrength`) |
-| `needs` (`safety`/`sustenance`/`belonging`) | only drops, two triggers total | never regenerates |
+| `needs` (`safety`/`sustenance`/`belonging`) | rises and drops, several triggers each | `safety` passively regenerates per tick; the other two only move on trigger |
 | `emotions` (transient) | — | yes, computed live, capped at 20 entries |
 | `relationships` (`trust`/`affection`/`fear`/`grievance`) | fully event-driven | no passive decay |
 | `goals` (`current`/`future`) | current ↔ future via `reassessGoals` | — |
@@ -88,11 +88,12 @@ in-app mind inspector.
 ## Known gaps (see PERSON-MODEL.md for the full list)
 
 `PERSON-MODEL.md` tracks stubs and intentionally-deferred work in detail — check it
-before assuming an unwired-looking piece (e.g. `belonging`, `ReplenishFood`) is a bug
-rather than a documented gap. Headline items: Personality/Values/Worldview are meant
-to be "sticky, not static" eventually (Phase 2, not yet designed); beliefs never decay
-or get pruned; needs never regenerate; `belonging` has no triggers at all;
-`ReplenishFood` goals are created but never read.
+before assuming an unwired-looking piece is a bug rather than a documented gap.
+Headline items: Personality/Values/Worldview are meant to be "sticky, not static"
+eventually (Phase 2, not yet designed); beliefs never decay or get pruned; Move events
+still get flat-floor memory importance (only Tell is content-aware so far); `Tradition`
+and `Pleasure` values are intentionally left unwired, same treatment as Superstition
+under Worldview.
 
 When the person model changes, update `PERSON-MODEL.md` in the same change — the
 project treats drift between it and `sim.js` as a bug in one or the other.
