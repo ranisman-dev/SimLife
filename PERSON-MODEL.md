@@ -286,6 +286,42 @@ impact-scaled base term every candidate shares, reflecting how bad the event
 was rather than who the witness is) are deliberately left out of the
 breakdown.
 
+### Witness reaction ordering and scoring purity (Phase 2)
+
+Scoring is now a pure function, `scoreCandidates(world, witness, event, appraisal,
+priorRelationship)`, returning `{ reacts, candidates }` with `candidates` pre-sorted
+descending by score and never empty. `reacts` is false exactly when
+`appraisal.impact >= -0.05` — the band where a witness registers the event but does
+not care enough to act — and in that case the list holds only the `do nothing`
+candidate. The named-`terms` + `Object.values(...).reduce` idiom, `explainTerms()`,
+`event.why`, and `mind.log[].why` are all unchanged; the extraction relocated the
+code, not the maths.
+
+Witnesses to a shared event are dispatched in descending top-candidate-score order,
+not in `world.agents` insertion order. Witnesses in the no-reaction band sort last,
+ties keep `agentsAt` order via a stable sort, and no randomness is involved anywhere
+in ordering. The dispatched sequence is recorded on the event as `event.witnessOrder`,
+a display/inspection field in the same family as `causedBy` and `why`, never read
+back into scoring.
+
+Ordering is a two-pass design: scores are computed for all witnesses first (via
+`orderWitnesses()`), then each witness's `perceiveEvent` cascade runs in that order
+and *recomputes* its own appraisal and candidate scores fresh. The pre-pass number
+decides only position in the queue. The visible consequence, which is accepted and
+not a bug: a witness can be sorted first and then take no action, because an earlier
+witness's cascade moved their appraisal into the no-reaction band before their turn
+came.
+
+The "tell a confidant" candidate's truth/lie flip and `pickScapegoat` weighted draw
+now happen only when that candidate wins, inside a `resolve()` hook (backed by the
+named top-level `resolveGossipTell()` helper, not an inline closure, so the RNG call
+site's literal source text lives outside `scoreCandidates()`'s own body).
+Consequence for the mind inspector: the `considered` list shows the gossip candidate
+without the `(misattributed)` marker, since misattribution is not decided until the
+candidate is chosen; the `chose` label still carries it, and the misattribution is
+visible on the resulting `Tell` event as `data.claim.subject` naming someone other
+than the real actor.
+
 ## Gaps for the next phase
 
 ### Phase 1 — Worldview, static — SHIPPED
