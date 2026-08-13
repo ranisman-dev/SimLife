@@ -43,12 +43,16 @@ const EMOTION_HALFLIFE_TICKS = 6;
 
 // Single shared home for every new tuning number Phases 2-7 introduce
 // (thresholds, rates, decay constants) — one named block, not split per
-// mechanic, per D-06. Deliberately ships empty this phase: Phase 1 adds
-// verification infrastructure only and introduces no NPC-visible behavior of
-// its own to tune. Pre-existing constants (MAX_REACTION_DEPTH,
+// mechanic, per D-06. Pre-existing constants (MAX_REACTION_DEPTH,
 // EMOTION_HALFLIFE_TICKS) are explicitly NOT retrofitted in here per D-07 —
 // they stay exactly where they already are.
-const TUNING = {};
+const TUNING = {
+  // Belief-side mirror of addMemory()'s existing inline 0.03 memory floor
+  // (sim.js addMemory) — same discretion-clause value (D-02), no reason yet
+  // to diverge. addMemory's own inline 0.03 is intentionally left as-is per
+  // D-07 (pre-existing constants aren't retrofitted into TUNING).
+  beliefPruneFloor: 0.03,
+};
 
 // The always-reproducible seed seedRng() uses when no explicit seed is
 // passed — what the regression check (Plan 02) relies on for a fixed
@@ -498,6 +502,19 @@ function memoryStrength(mem, currentTick) {
   return mem.importance * Math.pow(0.5, Math.max(0, currentTick - mem.tick) / halflife);
 }
 
+// D-01: beliefs' side of the same lazy-decay idiom memoryStrength already
+// establishes — same formula shape, belief.confidence substituted for
+// mem.importance (beliefs have no separate importance field; confidence is
+// the closest existing analog for "how strongly held this is"). Pure: no
+// assignment to `belief` anywhere in this body, no caching, no write-back.
+// Purity is load-bearing, not stylistic — snapshotWorld() serializes raw
+// stored values, so a write-back-on-read would make the golden-master
+// baseline depend on read order.
+function beliefConfidence(belief, currentTick) {
+  const halflife = 3 + belief.confidence * 35;
+  return belief.confidence * Math.pow(0.5, Math.max(0, currentTick - belief.tick) / halflife);
+}
+
 function memoryStrengthForEvent(agent, eventId, currentTick) {
   const mem = agent.mind.memories.find(m => m.eventId === eventId);
   return mem ? memoryStrength(mem, currentTick) : 0; // no memory record left = genuinely forgotten
@@ -598,6 +615,20 @@ function perceiveEvent(world, witnessId, event) {
 
   const appraisal = appraiseEvent(world, witness, event);
   addMemory(witness, event.id, event.tick, clamp(Math.abs(appraisal.impact), 0.1, 1));
+
+  // D-03: prune-on-push, mirroring addMemory's filter-immediately-before-push
+  // shape — no separate sweep loop. D-02 exemption: a belief whose `source`
+  // carries the "known false" tag (applyClaimBelief's contradicted-claim
+  // marker) survives regardless of age, because it's the record most worth
+  // keeping, not least — a confidence-0 contradicted belief is exactly what
+  // stops a lie from being re-believed later. Guard the `source` read since
+  // witnessed beliefs (constructed just below) don't carry that tag.
+  // Deliberately no length cap here, unlike addMemory's `if (length > 40)
+  // shift()` — shift() removes the oldest entry unconditionally, which would
+  // evict a protected known-false belief and violate D-02.
+  witness.mind.beliefs = witness.mind.beliefs.filter(b =>
+    (b.source && b.source.includes('known false')) || beliefConfidence(b, event.tick) > TUNING.beliefPruneFloor
+  );
 
   witness.mind.beliefs.push({
     id: `${witnessId}-ev${event.id}`,
@@ -852,6 +883,9 @@ function applyClaimBelief(world, witness, tellerId, claim, confidence, source, t
       const selfServing = isDenialOfOwnAccusation ? 0.6 : 1.0;
       const newSupport = confidence * selfServing;
 
+      // Deliberately does not touch c.tick: these confidence discounts are a
+      // downward revision, not reinforcement, so the decay clock (D-01) keeps
+      // running from the belief's original formation tick, not from now.
       if (newSupport > existingSupport) {
         conflicts.forEach(c => { c.confidence = clamp(c.confidence * 0.35, 0, 1); c.contested = true; });
         effectiveConfidence = clamp(newSupport, 0, 0.85); // a contested claim never lands at full certainty
@@ -888,6 +922,13 @@ function applyClaimBelief(world, witness, tellerId, claim, confidence, source, t
       effectiveConfidence = clamp(effectiveConfidence - loyaltyWeight * accusedAffection * 0.3, 0, 1);
     }
   }
+
+  // D-03/D-02: same prune-on-push filter as the witnessed-belief push site
+  // (perceiveEvent) — see the comment there for the full rationale. Kept
+  // immediately before the push here too, mirroring addMemory's template.
+  witness.mind.beliefs = witness.mind.beliefs.filter(b =>
+    (b.source && b.source.includes('known false')) || beliefConfidence(b, tick) > TUNING.beliefPruneFloor
+  );
 
   witness.mind.beliefs.push({
     id: `${witness.id}-claim${eventId}`,
@@ -1786,6 +1827,7 @@ const Sim = {
   appraiseEvent,
   scoreCandidates,
   memoryStrength,
+  beliefConfidence,
   scenarioParticipants,
   snapshotWorld,
   diffSnapshots,
