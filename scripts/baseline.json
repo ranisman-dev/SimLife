@@ -198,9 +198,18 @@
             }
           ],
           "needs": {
-            "safety": 1,
-            "sustenance": 1,
-            "belonging": 0.6
+            "safety": {
+              "value": 1,
+              "tick": 0
+            },
+            "sustenance": {
+              "value": 1,
+              "tick": 0
+            },
+            "belonging": {
+              "value": 0.6,
+              "tick": 0
+            }
           },
           "emotions": [
             {
@@ -274,7 +283,8 @@
                 "do nothing=0.11"
               ],
               "chose": "attack player",
-              "why": "CompetitiveJungle + boldness"
+              "why": "CompetitiveJungle + boldness",
+              "retreatForSafety": false
             }
           ]
         }
@@ -354,9 +364,18 @@
             }
           ],
           "needs": {
-            "safety": 0.6,
-            "sustenance": 1,
-            "belonging": 0.6
+            "safety": {
+              "value": 0.6,
+              "tick": 0
+            },
+            "sustenance": {
+              "value": 1,
+              "tick": 0
+            },
+            "belonging": {
+              "value": 0.6,
+              "tick": 0
+            }
           },
           "emotions": [
             {
@@ -441,7 +460,8 @@
                 "attack player=0.20"
               ],
               "chose": "tell ives about player",
-              "why": "affection + generalCare"
+              "why": "affection + generalCare",
+              "retreatForSafety": false
             },
             {
               "tick": 2,
@@ -453,7 +473,8 @@
                 "attack ives=0.01"
               ],
               "chose": "press ives for an explanation",
-              "why": "conscientiousness + trust + affection"
+              "why": "conscientiousness + trust + affection",
+              "retreatForSafety": false
             }
           ]
         }
@@ -601,9 +622,18 @@
             }
           ],
           "needs": {
-            "safety": 1,
-            "sustenance": 1,
-            "belonging": 0.6
+            "safety": {
+              "value": 1,
+              "tick": 0
+            },
+            "sustenance": {
+              "value": 1,
+              "tick": 0
+            },
+            "belonging": {
+              "value": 0.6,
+              "tick": 0
+            }
           },
           "emotions": [
             {
@@ -665,7 +695,8 @@
                 "attack player=-0.06"
               ],
               "chose": "do nothing",
-              "why": "boldness"
+              "why": "boldness",
+              "retreatForSafety": false
             }
           ]
         }
@@ -731,9 +762,18 @@
             }
           ],
           "needs": {
-            "safety": 0.6,
-            "sustenance": 1,
-            "belonging": 0.6
+            "safety": {
+              "value": 0.6,
+              "tick": 0
+            },
+            "sustenance": {
+              "value": 1,
+              "tick": 0
+            },
+            "belonging": {
+              "value": 0.6,
+              "tick": 0
+            }
           },
           "emotions": [
             {
@@ -793,7 +833,8 @@
                 "attack player=0.20"
               ],
               "chose": "tell ives about player",
-              "why": "affection + generalCare"
+              "why": "affection + generalCare",
+              "retreatForSafety": false
             }
           ]
         }

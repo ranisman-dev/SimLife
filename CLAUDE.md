@@ -67,9 +67,9 @@ hooks. Skim it before touching belief/relationship/decision logic. Summary:
 | `personality` (OCEAN + `boldness`) | never, set once in `createWorld()` | static |
 | `values` (from `Sim.VALUES` bank) | never | static |
 | `worldview` (from `Sim.WORLDVIEW_BELIEFS` bank) | never | static |
-| `beliefs` (situational stances, not memories) | confidence can be revised | never — array only grows |
+| `beliefs` (situational stances, not memories) | confidence can be revised | computed live (`beliefConfidence`), pruned on push below `TUNING.beliefPruneFloor`; `known false` exempt |
 | `memories` (episodic pointers into `world.events`) | — | yes, computed live (`memoryStrength`) |
-| `needs` (`safety`/`sustenance`/`belonging`) | only drops, two triggers total | never regenerates |
+| `needs` (`safety`/`sustenance`/`belonging`) | drops on `Take`/`Attack`, rises on `Give`/`is_trustworthy` `Tell` | regenerates, computed live (`needValue`) |
 | `emotions` (transient) | — | yes, computed live, capped at 20 entries |
 | `relationships` (`trust`/`affection`/`fear`/`grievance`) | fully event-driven | no passive decay |
 | `goals` (`current`/`future`) | current ↔ future via `reassessGoals` | — |
@@ -102,11 +102,10 @@ inspector.
 ## Known gaps (see PERSON-MODEL.md for the full list)
 
 `PERSON-MODEL.md` tracks stubs and intentionally-deferred work in detail — check it
-before assuming an unwired-looking piece (e.g. `belonging`, `ReplenishFood`) is a bug
-rather than a documented gap. Headline items: Personality/Values/Worldview are meant
-to be "sticky, not static" eventually (Phase 2, not yet designed); beliefs never decay
-or get pruned; needs never regenerate; `belonging` has no triggers at all;
-`ReplenishFood` goals are created but never read.
+before assuming an unwired-looking piece (e.g. `ReplenishFood`) is a bug rather than a
+documented gap. Headline items: Personality/Values/Worldview are meant to be "sticky,
+not static" eventually (Phase 2, not yet designed); `ReplenishFood` goals are created
+but never read; `mind.log` grows unbounded.
 
 When the person model changes, update `PERSON-MODEL.md` in the same change — the
 project treats drift between it and `sim.js` as a bug in one or the other.
@@ -278,7 +277,7 @@ than flavor text.
 - Pattern: append-only log (`world.events`), never mutated after creation
 - Purpose: a propositional stance about a specific incident, distinct
 - Examples: pushed at `sim.js:429-438` (witnessed) and `sim.js:719-729`
-- Pattern: array only grows, never pruned or decayed (documented gap)
+- Pattern: decays live (`beliefConfidence`), pruned on push below the floor, `known false` exempt
 - Purpose: separates static/never-mutated traits (`personality`,
 - Examples: initialized in `makeAgent()` (`sim.js:54-72`)
 - Pattern: see `PERSON-MODEL.md` for exact mutability/decay rules per box
