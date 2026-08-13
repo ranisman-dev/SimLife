@@ -74,6 +74,18 @@ const TUNING = {
   // connection than parting with an item from your own inventory.
   belongingGiveGain: 0.08,
   belongingVouchGain: 0.05,
+  // D-07: two-threshold hysteresis band around the old flat `safety < 0.7`
+  // retreat cutoff, symmetric +/-0.05. Enter = the threshold a witness who is
+  // NOT currently retreating for safety reasons must drop below to START
+  // retreating. Exit = the (looser) threshold a witness who IS currently
+  // retreating must rise back ABOVE before safety stops gating them in. A
+  // witness inside [retreatSafetyEnter, retreatSafetyExit] keeps whatever
+  // retreating-for-safety state it already had — that persistence through the
+  // band is the whole point (ROADMAP Phase 3 success criterion 5: does not
+  // flicker every tick). Do not transpose these two names — Enter is the
+  // stricter (lower) value, Exit is the looser (higher) one.
+  retreatSafetyEnter: 0.65,
+  retreatSafetyExit: 0.75,
 };
 
 // The always-reproducible seed seedRng() uses when no explicit seed is
@@ -1153,6 +1165,58 @@ function explainTerms(terms) {
 // are a deterministic function of the witness's DangerousWorld worldview
 // weight, not of when they were created — so creating them earlier changes
 // no value anywhere.
+//
+// D-07's hysteresis needs to know whether a witness is CURRENTLY retreating
+// for safety reasons, and it must learn that without scoreCandidates itself
+// writing anything (scoreCandidates is called twice per witness per event —
+// once in orderWitnesses' read-only ranking pre-pass, once again in
+// decideAndAct's real dispatch — and a write here would execute during the
+// pre-pass and corrupt dispatch ranking; see the file-top note on
+// scoreCandidates's purity and 02-03-SUMMARY.md's "Next Phase Readiness").
+// So this reads state that only decideAndAct ever writes: the
+// `retreatForSafety` marker on a witness's own mind.log entries (added to
+// the winner-log write below, in decideAndAct).
+//
+// The marker discriminates WHY retreat won, not just THAT it won — the
+// retreat gate is a three-way disjunction (rel.fear > 0.3 || <safety
+// condition> || fearEmotion > 0.2), so a retreat candidate can win on fear
+// alone at high safety. A scan for "the last entry that chose retreat"
+// cannot tell that apart from a safety-driven retreat, and would wrongly
+// latch a fear-driven witness onto the looser Exit threshold for later
+// safety-only scoring.
+//
+// Latch semantics (must match this exactly — see 03-04-PLAN.md's Task 1
+// for the full reasoning):
+//   - Most recent entry carries `retreatForSafety: true` (retreat won on the
+//     safety term) -> true -> stays gated in through the band up to Exit.
+//   - Most recent entry carries `retreatForSafety: false` (retreat won on
+//     fear alone, OR a later winner entry where retreat did not win at all,
+//     including because safety rose above Exit and the retreat candidate
+//     stopped existing) -> false -> back on the stricter Enter threshold.
+//   - No-reaction ("do nothing"/"barely noticed") log entries never carry
+//     this property at all and are skipped by the backward scan, so an
+//     indifferent reaction cannot silently clear a real retreating latch.
+//   - Known, accepted residue: if a latched witness's safety rises above
+//     Exit and every subsequent decision produces only a no-reaction entry
+//     (or logs nothing at all, whenever appraisal.impact >= 0), the latch
+//     stays true until the next winner entry — nothing that writes only from
+//     decideAndAct can close that unlogged window, and a `mind` field would
+//     have the identical hole. Accepted rather than chased with a sweep or a
+//     write from scoreCandidates.
+//
+// Strictly read-only: no writes to agent/agent.mind/the log, no memoization,
+// no cached field. Returns false (never throws) for a null/absent mind
+// (the player) or an empty log, since the ordering pre-pass evaluates
+// witnesses broadly, including the player.
+function isCurrentlyRetreating(agent) {
+  if (!agent || !agent.mind || !Array.isArray(agent.mind.log)) return false;
+  const log = agent.mind.log;
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (log[i].retreatForSafety !== undefined) return log[i].retreatForSafety === true;
+  }
+  return false;
+}
+
 function scoreCandidates(world, witness, event, appraisal, priorRelationship) {
   const { boldness, extraversion, agreeableness, conscientiousness } = witness.mind.personality;
 
@@ -1295,7 +1359,16 @@ function scoreCandidates(world, witness, event, appraisal, priorRelationship) {
 
   const fearEmotion = activeEmotionIntensity(witness, 'Fear', actorId, event.tick);
   const safety = needValue(witness, 'safety', event.tick);
-  if (rel.fear > 0.3 || safety < 0.7 || fearEmotion > 0.2) {
+  // D-07: which threshold applies depends on whether this witness is already
+  // retreating for safety reasons — a witness already gated in stays gated
+  // in through the whole [Enter, Exit] band, a witness not yet gated in only
+  // opens the gate below the stricter Enter threshold. isCurrentlyRetreating
+  // only ever reads a marker decideAndAct writes (see its own comment above),
+  // so this stays a pure read here too. The other two disjuncts (fear,
+  // fearEmotion) are untouched by D-07 — the band governs the safety term
+  // only.
+  const safetyGate = isCurrentlyRetreating(witness) ? safety < TUNING.retreatSafetyExit : safety < TUNING.retreatSafetyEnter;
+  if (rel.fear > 0.3 || safetyGate || fearEmotion > 0.2) {
     // Valuing Safety highly makes the pull to get away from danger stronger on top
     // of how scared the witness actually is right now.
     const retreatTerms = {
@@ -1309,6 +1382,13 @@ function scoreCandidates(world, witness, event, appraisal, priorRelationship) {
       label: 'retreat',
       score: retreatScore,
       terms: retreatTerms,
+      // Plain data on the returned candidate — not a write to witness/world/
+      // any state, so scoreCandidates stays pure. Carries WHY the retreat
+      // gate opened: this candidate can win on fear alone even when
+      // safetyGate is false, and a retreat that won on fear alone is NOT the
+      // same state as one that won on low safety (see isCurrentlyRetreating's
+      // comment above scoreCandidates).
+      safetyDriven: safetyGate,
     });
   }
 
@@ -1357,6 +1437,14 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
     considered: candidates.map(c => `${c.label}=${c.score.toFixed(2)}`),
     chose: resolved.label,
     why,
+    // D-07: the only write in the hysteresis mechanism, and it lives here —
+    // where log writes already live — precisely because orderWitnesses'
+    // pre-pass never calls decideAndAct, so this can never execute during
+    // ranking. Records WHY retreat won (not just that it did): true only
+    // when retreat both won AND won on the safety term specifically
+    // (best.safetyDriven, set on the candidate in scoreCandidates above).
+    // isCurrentlyRetreating() is the sole reader of this property.
+    retreatForSafety: best.label === 'retreat' && best.safetyDriven === true,
   });
 
   if (resolved.action) resolved.action(why);
@@ -2176,6 +2264,7 @@ const Sim = {
   getAgent,
   appraiseEvent,
   scoreCandidates,
+  isCurrentlyRetreating,
   memoryStrength,
   beliefConfidence,
   needValue,
