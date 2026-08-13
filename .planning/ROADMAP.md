@@ -114,7 +114,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Belief confidence decay (`beliefConfidence`, memoryStrength formula mirror), known-false-exempt prune-on-push at both belief push sites, and the `runDecayCheck()` runner wired into verify.js as a gating batch
+- [x] 03-01-PLAN.md — Belief confidence decay (`beliefConfidence`, memoryStrength formula mirror), known-false-exempt prune-on-push at both belief push sites, and the `runDecayCheck()` runner wired into verify.js as a gating batch
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -200,7 +200,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|-----------------|--------|-----------|
 | 1. Verification Infrastructure | 3/3 | Complete   | 2026-08-12 |
 | 2. Witness Reaction Ordering | 3/4 | In Progress|  |
-| 3. Belief Decay & Needs Regeneration | 0/5 | Not started | - |
+| 3. Belief Decay & Needs Regeneration | 1/5 | In Progress|  |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
 | 5. Slow Trait Drift | 0/1 | Not started | - |
 | 6. Snap Events | 0/1 | Not started | - |
