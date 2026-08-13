@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-08-13T00:42:37.918Z"
-last_activity: 2026-08-13 -- Phase 2 planning complete
+last_updated: "2026-08-13T00:42:52.856Z"
+last_activity: 2026-08-13 -- Phase 2 execution started
 progress:
   total_phases: 7
   completed_phases: 1
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** An entire world — not just NPCs — reacts unscripted to what anyone in it does, player and NPC alike, with real, lasting consequences rather than flavor text. *(This milestone's slice: making the person model itself capable of changing under pressure, plus closing the gaps that undercut it.)*
-**Current focus:** Phase 1 — Verification Infrastructure
+**Current focus:** Phase 2 — Witness Reaction Ordering
 
 ## Current Position
 
-Phase: 1 (Verification Infrastructure) — EXECUTING
-Plan: 1 of 3
-Status: Ready to execute
-Last activity: 2026-08-13 -- Phase 2 planning complete
+Phase: 2 (Witness Reaction Ordering) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 2
+Last activity: 2026-08-13 -- Phase 2 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
