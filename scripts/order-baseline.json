@@ -1,234 +1,192 @@
 {
   "witnessOrder": [
-    "mara",
-    "ives",
-    "tomas",
+    "garrick",
     "elena",
-    "garrick"
+    "mara",
+    "tomas",
+    "ives"
   ],
   "reactions": [
     {
       "id": 2,
       "causedBy": 1,
-      "actor": "mara",
-      "verb": "Tell",
+      "actor": "garrick",
+      "verb": "Attack",
       "target": "player",
       "witnessOrder": [
-        "player",
-        "ives",
-        "tomas",
         "elena",
-        "garrick"
+        "mara",
+        "tomas",
+        "ives",
+        "player"
       ]
     },
     {
       "id": 3,
-      "causedBy": 1,
-      "actor": "tomas",
-      "verb": "Attack",
-      "target": "player",
+      "causedBy": 2,
+      "actor": "elena",
+      "verb": "Tell",
+      "target": "garrick",
       "witnessOrder": [
-        "player",
         "mara",
+        "tomas",
         "ives",
-        "elena",
-        "garrick"
+        "garrick",
+        "player"
       ]
     },
     {
       "id": 4,
-      "causedBy": 3,
+      "causedBy": 2,
       "actor": "mara",
       "verb": "Tell",
-      "target": "tomas",
+      "target": "garrick",
       "witnessOrder": [
-        "player",
-        "ives",
         "tomas",
         "elena",
-        "garrick"
+        "ives",
+        "garrick",
+        "player"
       ]
     },
     {
       "id": 5,
-      "causedBy": 3,
-      "actor": "elena",
-      "verb": "Tell",
-      "target": "mara",
+      "causedBy": 2,
+      "actor": "tomas",
+      "verb": "Attack",
+      "target": "garrick",
       "witnessOrder": [
-        "player",
+        "garrick",
+        "elena",
         "mara",
         "ives",
-        "tomas",
-        "garrick"
+        "player"
       ]
     },
     {
       "id": 6,
-      "causedBy": 3,
+      "causedBy": 5,
       "actor": "garrick",
-      "verb": "Tell",
+      "verb": "Attack",
       "target": "tomas",
       "witnessOrder": [
-        "player",
+        "tomas",
+        "elena",
         "mara",
         "ives",
-        "tomas",
-        "elena"
+        "player"
       ]
     },
     {
       "id": 7,
-      "causedBy": 1,
-      "actor": "elena",
+      "causedBy": 6,
+      "actor": "tomas",
       "verb": "Tell",
-      "target": "mara",
+      "target": "ives",
       "witnessOrder": [
         "player",
         "mara",
         "ives",
-        "tomas",
+        "elena",
         "garrick"
       ]
     },
     {
       "id": 8,
-      "causedBy": 1,
-      "actor": "garrick",
-      "verb": "Attack",
-      "target": "player",
+      "causedBy": 6,
+      "actor": "elena",
+      "verb": "Tell",
+      "target": "mara",
       "witnessOrder": [
         "player",
         "mara",
         "ives",
         "tomas",
-        "elena"
+        "garrick"
       ]
     },
     {
       "id": 9,
-      "causedBy": 8,
+      "causedBy": 5,
       "actor": "mara",
       "verb": "Tell",
-      "target": "garrick",
+      "target": "tomas",
       "witnessOrder": [
-        "player",
-        "ives",
         "tomas",
         "elena",
-        "garrick"
+        "ives",
+        "garrick",
+        "player"
       ]
     },
     {
       "id": 10,
-      "causedBy": 8,
-      "actor": "tomas",
-      "verb": "Attack",
-      "target": "garrick",
+      "causedBy": 1,
+      "actor": "mara",
+      "verb": "Tell",
+      "target": "player",
       "witnessOrder": [
-        "player",
-        "mara",
-        "ives",
+        "tomas",
         "elena",
-        "garrick"
+        "ives",
+        "garrick",
+        "player"
       ]
     },
     {
       "id": 11,
-      "causedBy": 10,
-      "actor": "mara",
-      "verb": "Tell",
-      "target": "tomas",
+      "causedBy": 1,
+      "actor": "tomas",
+      "verb": "Attack",
+      "target": "player",
       "witnessOrder": [
-        "player",
-        "ives",
-        "tomas",
         "elena",
-        "garrick"
+        "mara",
+        "garrick",
+        "ives",
+        "player"
       ]
     },
     {
       "id": 12,
-      "causedBy": 10,
+      "causedBy": 11,
       "actor": "elena",
       "verb": "Tell",
       "target": "ives",
       "witnessOrder": [
-        "player",
         "mara",
-        "ives",
         "tomas",
-        "garrick"
+        "ives",
+        "garrick",
+        "player"
       ]
     },
     {
       "id": 13,
-      "causedBy": 10,
-      "actor": "garrick",
-      "verb": "Attack",
+      "causedBy": 11,
+      "actor": "mara",
+      "verb": "Tell",
       "target": "tomas",
       "witnessOrder": [
-        "player",
-        "mara",
-        "ives",
         "tomas",
-        "elena"
+        "elena",
+        "ives",
+        "garrick",
+        "player"
       ]
     },
     {
       "id": 14,
-      "causedBy": 13,
-      "actor": "mara",
+      "causedBy": 11,
+      "actor": "garrick",
       "verb": "Tell",
-      "target": "garrick",
+      "target": "mara",
       "witnessOrder": [
-        "player",
-        "ives",
+        "mara",
         "tomas",
         "elena",
-        "garrick"
-      ]
-    },
-    {
-      "id": 15,
-      "causedBy": 13,
-      "actor": "tomas",
-      "verb": "Tell",
-      "target": "ives",
-      "witnessOrder": [
-        "player",
-        "mara",
         "ives",
-        "elena",
-        "garrick"
-      ]
-    },
-    {
-      "id": 16,
-      "causedBy": 13,
-      "actor": "elena",
-      "verb": "Tell",
-      "target": "garrick",
-      "witnessOrder": [
-        "player",
-        "mara",
-        "ives",
-        "tomas",
-        "garrick"
-      ]
-    },
-    {
-      "id": 17,
-      "causedBy": 8,
-      "actor": "elena",
-      "verb": "Tell",
-      "target": "garrick",
-      "witnessOrder": [
-        "player",
-        "mara",
-        "ives",
-        "tomas",
-        "garrick"
+        "player"
       ]
     }
   ]
