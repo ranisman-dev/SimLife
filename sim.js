@@ -922,7 +922,26 @@ function explainTerms(terms) {
     .join(' + ');
 }
 
-function decideAndAct(world, witness, event, appraisal, priorRelationship) {
+// Pure, side-effect-free candidate scorer extracted from decideAndAct (D-01).
+// Reads world/witness/event/appraisal/priorRelationship and returns
+// { reacts, candidates } — it never pushes to witness.mind.log and never
+// draws from world.rng (the gossip candidate's two draws live inside its own
+// resolve() hook, invoked only by decideAndAct's real dispatch, never here).
+// This is what lets Plan 02-03's ordering pre-pass call this twice per
+// reacting witness (once to rank witnesses, once again inside decideAndAct's
+// real dispatch) without corrupting the mind inspector or double-consuming
+// the RNG stream. Modeled on appraiseEvent (sim.js:558) — the one other
+// pure scorer/classifier in this file, called ahead of the mutating work it
+// informs.
+//
+// One documented exception to "no side effects": relOf lazily *creates* a
+// default relationship entry on first read (sim.js:91-104). This is
+// acceptable here because scoreCandidates only ever touches the agent pairs
+// decideAndAct already touched at the same tick, and the created defaults
+// are a deterministic function of the witness's DangerousWorld worldview
+// weight, not of when they were created — so creating them earlier changes
+// no value anywhere.
+function scoreCandidates(world, witness, event, appraisal, priorRelationship) {
   const { boldness, extraversion, agreeableness, conscientiousness } = witness.mind.personality;
 
   // "Do nothing" is a real, personality-scored outcome, not a filler placeholder —
@@ -941,17 +960,17 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
   };
   const doNothingScore = clamp(0.15 + doNothingTerms.boldness + doNothingTerms.extraversion + doNothingTerms.agreeableness, 0.05, 0.65);
 
-  if (appraisal.impact >= -0.05) {
-    if (appraisal.impact < 0) {
-      witness.mind.log.push({
-        tick: event.tick,
-        trigger: `ev#${event.id} ${event.verb} by ${event.actor}`,
-        considered: [`do nothing=${doNothingScore.toFixed(2)}`],
-        chose: `barely noticed — didn't care enough to react`,
-        why: explainTerms(doNothingTerms),
-      });
-    }
-    return;
+  // The negation of decideAndAct's old early-return condition — whether this
+  // witness builds a real candidate list at all. When false, candidates stays
+  // a single-entry array (do nothing only) so urgency (D-02: a witness's top
+  // candidate score) is well-defined for every witness, including ones who'd
+  // never have reached line 949 in the pre-extraction code.
+  const reacts = appraisal.impact < -0.05;
+  if (!reacts) {
+    // Return immediately — do not fall through into relOf/pickConfidant/
+    // agentsAt/activeEmotionIntensity, so a non-reacting witness costs four
+    // personality reads and nothing else.
+    return { reacts, candidates: [{ action: null, label: 'do nothing', score: doNothingScore, terms: doNothingTerms }] };
   }
 
   const actorId = event.actor;
@@ -1051,16 +1070,11 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
       // the ordering pre-pass, once for real dispatch — without double-consuming the
       // RNG stream. LOCKED D-05: RNG still decides only stochastic texture on an
       // already-decided action, never the decision itself — resolve() only ever
-      // runs after this candidate has already won on its RNG-free score.
-      resolve: () => {
-        const truthful = rngOf(world)() < clamp(0.5 + honestyWeight * 0.45, 0.05, 0.97);
-        const subject = truthful ? actorId : pickScapegoat(world, witness, actorId, event.data.targetId);
-        const claim = { predicate, subject, victim: event.data.targetId, item: event.data.item };
-        return {
-          label: `tell ${confidant} about ${actorId}${truthful ? '' : ' (misattributed)'}`,
-          action: (why) => performAction(world, witness.id, 'Tell', { targetId: confidant, claim }, { causedBy: event.id, why }),
-        };
-      },
+      // runs after this candidate has already won on its RNG-free score. The two
+      // draws themselves live in the named resolveGossipTell() helper below
+      // decideAndAct, not inlined here, so scoreCandidates()'s own source text has
+      // no RNG call site of its own — see the comment on resolveGossipTell.
+      resolve: () => resolveGossipTell(world, witness, event, actorId, confidant, predicate, honestyWeight),
       label: `tell ${confidant} about ${actorId}`,
       score: gossipScore,
       terms: gossipTerms,
@@ -1085,7 +1099,38 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
     });
   }
 
+  // D-02: a witness's urgency for ordering purposes is this top candidate's
+  // score, so the returned list is ranked here rather than leaving callers
+  // (Plan 02-03's ordering pre-pass included) to duplicate this sort.
   candidates.sort((a, b) => b.score - a.score);
+  return { reacts, candidates };
+}
+
+// decideAndAct is now the thin consumer: score, pick, resolve, log, fire.
+// All candidate-building logic lives in the pure scoreCandidates() above.
+function decideAndAct(world, witness, event, appraisal, priorRelationship) {
+  const { reacts, candidates } = scoreCandidates(world, witness, event, appraisal, priorRelationship);
+
+  if (!reacts) {
+    // Pushed only when appraisal.impact < 0 — a -0 impact (satisfies
+    // impact >= -0.05 but fails impact < 0) still pushes nothing, matching
+    // the pre-extraction behavior exactly. This log write (and the winner's
+    // below) are decideAndAct's only remaining jobs beyond firing the winning
+    // candidate's action — both log writes stay here, out of
+    // scoreCandidates, so a witness never gets logged twice once Plan 02-03
+    // calls scoreCandidates a second time for the same witness/event.
+    if (appraisal.impact < 0) {
+      witness.mind.log.push({
+        tick: event.tick,
+        trigger: `ev#${event.id} ${event.verb} by ${event.actor}`,
+        considered: [`do nothing=${candidates[0].score.toFixed(2)}`],
+        chose: `barely noticed — didn't care enough to react`,
+        why: explainTerms(candidates[0].terms),
+      });
+    }
+    return;
+  }
+
   const best = candidates[0];
   const why = explainTerms(best.terms);
   // resolve() runs at most once, only on the winning candidate — see the
@@ -1095,13 +1140,33 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
 
   witness.mind.log.push({
     tick: event.tick,
-    trigger: `ev#${event.id} ${event.verb} by ${actorId}`,
+    trigger: `ev#${event.id} ${event.verb} by ${event.actor}`,
     considered: candidates.map(c => `${c.label}=${c.score.toFixed(2)}`),
     chose: resolved.label,
     why,
   });
 
   if (resolved.action) resolved.action(why);
+}
+
+// Resolves the gossip candidate's honesty-flip and scapegoat-pick RNG rolls —
+// invoked only by decideAndAct, at most once, only on the winning candidate
+// (see the resolve hook built on the gossip candidate in scoreCandidates
+// above). Kept as a named top-level function rather than an inline closure so
+// the RNG draw below lives outside scoreCandidates()'s own source text —
+// T-02-06/T-02-07's mitigation (the double-call purity harness, plus the
+// re-bless path-allowlist gate) depends on that being true of the extracted
+// function's body, not just its runtime behavior. Matches this file's
+// convention of extracting named helpers (pickConfidant, pickScapegoat just
+// below) rather than nesting anything beyond a short inline callback.
+function resolveGossipTell(world, witness, event, actorId, confidant, predicate, honestyWeight) {
+  const truthful = rngOf(world)() < clamp(0.5 + honestyWeight * 0.45, 0.05, 0.97);
+  const subject = truthful ? actorId : pickScapegoat(world, witness, actorId, event.data.targetId);
+  const claim = { predicate, subject, victim: event.data.targetId, item: event.data.item };
+  return {
+    label: `tell ${confidant} about ${actorId}${truthful ? '' : ' (misattributed)'}`,
+    action: (why) => performAction(world, witness.id, 'Tell', { targetId: confidant, claim }, { causedBy: event.id, why }),
+  };
 }
 
 function pickConfidant(world, witness, excludeId, excludeVictimId) {
@@ -1576,6 +1641,8 @@ const Sim = {
   createWorld,
   performAction,
   getAgent,
+  appraiseEvent,
+  scoreCandidates,
   memoryStrength,
   scenarioParticipants,
   snapshotWorld,
