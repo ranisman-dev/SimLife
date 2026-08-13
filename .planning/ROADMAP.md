@@ -109,7 +109,29 @@ Plans:
   4. `belonging` has at least one working trigger, observable as a measurable rise in `belonging` following that trigger.
   5. An agent whose `safety` value oscillates near the retreat threshold does not flicker between retreat and non-retreat every tick across a scripted oscillation test, confirming the hysteresis band holds.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Belief confidence decay (`beliefConfidence`, memoryStrength formula mirror), known-false-exempt prune-on-push at both belief push sites, and the `runDecayCheck()` runner wired into verify.js as a gating batch
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03-02-PLAN.md — Needs `{value, tick}` shape + pure `needValue()` accessor + tick-threaded `adjustNeed`, both `sim.js` raw safety reads swapped, the required `presentation.js` consequential fix (four read sites), and the DECAY-03 checks
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-03-PLAN.md — `belonging`'s first-ever triggers: Give and `is_trustworthy` Tell raising the actor's own need, guarded on `!actor.isPlayer`, plus the DECAY-04 checks
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03-04-PLAN.md — Retreat-gate hysteresis band (0.65/0.75) via the read-only `isCurrentlyRetreating()` log scan, the scripted oscillation checks, and the ORDER-01 qualitative regression verification under live D-04 + D-07
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 03-05-PLAN.md — The single human-reviewed golden-master re-bless, PERSON-MODEL.md/CLAUDE.md doc sync, and the human browser checkpoint
+
 **Research**: Skip — "existing idiom, lower risk"; both are computed-live-at-read or event-driven-stored patterns already proven elsewhere in `sim.js`.
 
 ### Phase 4: Tell/Move-Aware Memory Importance
@@ -178,7 +200,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|-----------------|--------|-----------|
 | 1. Verification Infrastructure | 3/3 | Complete   | 2026-08-12 |
 | 2. Witness Reaction Ordering | 3/4 | In Progress|  |
-| 3. Belief Decay & Needs Regeneration | 0/1 | Not started | - |
+| 3. Belief Decay & Needs Regeneration | 0/5 | Not started | - |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
 | 5. Slow Trait Drift | 0/1 | Not started | - |
 | 6. Snap Events | 0/1 | Not started | - |
