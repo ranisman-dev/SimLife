@@ -147,13 +147,25 @@ rendered — memories don't duplicate it.
 
 `{ safety, sustenance, belonging }`, default `{1, 1, 0.6}`, each 0–1.
 
-**Only two triggers exist in the entire codebase**: being Attacked drops
-`safety` by 0.4; bread hitting exactly zero after a Take drops `sustenance`
-by 0.4. **`belonging` is wired to nothing anywhere — pure stub, permanently
-0.6.** Needs also never regenerate — nothing raises them back toward 1.
-There's no eating, no "felt safe for a while so safety recovers," nothing.
-A need that's dropped stays dropped forever unless something explicitly
-pushes it back up, and nothing currently does.
+**Triggers:**
+- `safety` — drops 0.4 when Attacked. Passively regenerates a small amount
+  (`+0.015`) every tick for every living NPC (`regenerateNeeds()`, called
+  once per `performAction`) — fear fades on its own if nothing keeps
+  reinforcing it. No analogous passive drift exists for the other two needs.
+- `sustenance` — drops 0.4 when an NPC's bread hits exactly zero after a
+  Take. Recovers (`+0.15 × quantity`) whenever an NPC gains bread, whether
+  by receiving a Give or by taking it themselves — there's no separate Eat
+  verb, so possessing bread stands in for having eaten. Does not passively
+  regenerate; food security only comes from actually getting bread.
+- `belonging` — rises (`+0.05`) when directly spoken to (any Tell aimed at
+  the witness, regardless of what's said — being ignored hurts belonging,
+  not being gossiped about) and moves with `impact × 0.1` whenever
+  something happens *to the witness personally* (`isVictim` in
+  `applyAppraisal`) — being helped nudges it up, being wronged nudges it
+  down. Doesn't move on behalf of sympathy for someone else's misfortune.
+  Does not passively regenerate; isolation doesn't self-correct.
+
+A need that's dropped stays dropped unless one of the above triggers fires.
 
 ## Emotions (`mind.emotions`)
 
@@ -193,10 +205,16 @@ types exist:
   resurface into `current` if the suppressing condition reverses and the
   underlying memory hasn't decayed past relevance, or get silently pruned
   if it has.
-- **`ReplenishFood`** — created once (`applyEffects`, Take) when an NPC's
-  bread hits zero, pushed straight into `future`. **Never read again
-  anywhere in the codebase.** Same shape as a real goal, no behavior behind
-  it — a stub that shows up in the mind inspector and nothing else.
+- **`ReplenishFood`** — created (`applyEffects`, Take) when an NPC's bread
+  hits zero, pushed into `future`. Has no `target` (it's a need, not a
+  grievance against someone), so it doesn't go through `reassessGoals`'
+  relationship-driven settle/dormant path — instead `resolveReplenishFood()`
+  clears it directly, from both buckets, the moment `sustenance` recovers
+  above 0.5 from gaining bread, logging the settlement the same way
+  `closeGoalSettled` does for `SeekRestitution`. Still doesn't drive any
+  proactive food-seeking behavior — nothing in this prototype gives NPCs an
+  idle turn to act on their own goals outside reacting to witnessed events,
+  so "created, then resolves when satisfied" is as far as it goes for now.
 
 ## Gaps for the next phase
 
@@ -228,18 +246,28 @@ answers before it's buildable, not during:
   once (a single betrayal denting both a Loyalty value and a
   GeneralizedTrust worldview)?
 
-### Pre-existing stubs, unrelated to Worldview
+### Resolved this pass
 
-Still open from the last pass, unchanged priority:
+- **Needs regeneration and `belonging`.** `safety` now passively regenerates
+  per tick; `sustenance` recovers from gaining bread; `belonging` now moves
+  off being spoken to directly and off things that happen to the witness
+  personally. See the Needs section above for exact triggers.
+- **Tell-aware memory importance.** `memoryImportanceForTell()` scores a
+  conversation memory by the claim's predicate severity and whether it
+  names or was directed at the witness, replacing the old flat 0.1 floor
+  every Tell used to get (Tell was never scored by `appraiseEvent`, so its
+  `impact` was always 0).
+- **`ReplenishFood` goal.** Now actually resolves — see the Goals section
+  above.
+
+### Still open
 
 - **Belief decay/pruning.** Beliefs never fade or get forgotten the way
   memories do — an odd asymmetry given a belief is downstream of a memory
   in the witnessed case.
-- **Needs regeneration and `belonging`.** No need currently recovers on its
-  own, and `belonging` has no triggers at all.
-- **Tell/Move-aware memory importance.** Conversation memories should
-  presumably inherit some signal from the claim's content, not always form
-  at the floor.
-- **`ReplenishFood` goal.** Created, never read again anywhere — either
-  wire it to something (an agent low on food actually seeking more) or cut
-  it until it does something.
+- **Move-aware memory importance.** Only Tell got a content-aware importance
+  function this pass; Move events still fall back to
+  `clamp(Math.abs(appraisal.impact), 0.1, 1)`, and `appraiseEvent` doesn't
+  score Move at all (impact stays 0), so a Move memory still always forms
+  at the floor. Lower priority than Tell was — nobody's shown a scenario
+  yet where which direction someone walked needs to be remembered vividly.
