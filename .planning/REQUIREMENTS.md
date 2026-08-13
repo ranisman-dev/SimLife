@@ -28,9 +28,9 @@ changing under pressure, plus closing the gaps that currently undercut it.)*
 
 ### Belief Decay & Needs Regeneration
 
-- [ ] **DECAY-01**: A belief's effective confidence decays over time the same way memory
+- [x] **DECAY-01**: A belief's effective confidence decays over time the same way memory
       strength does, using the existing halflife-style formula
-- [ ] **DECAY-02**: A belief tagged "known false" (contradicted by ground truth) is never
+- [x] **DECAY-02**: A belief tagged "known false" (contradicted by ground truth) is never
       pruned regardless of staleness — pruning only removes genuinely stale, unreinforced
       beliefs
 - [ ] **DECAY-03**: `safety`, `sustenance`, and `belonging` needs regenerate toward
@@ -112,8 +112,8 @@ changing under pressure, plus closing the gaps that currently undercut it.)*
 | VERIF-03 | Phase 1 | Pending |
 | ORDER-01 | Phase 2 | Pending |
 | ORDER-02 | Phase 2 | Pending |
-| DECAY-01 | Phase 3 | Pending |
-| DECAY-02 | Phase 3 | Pending |
+| DECAY-01 | Phase 3 | Complete |
+| DECAY-02 | Phase 3 | Complete |
 | DECAY-03 | Phase 3 | Pending |
 | DECAY-04 | Phase 3 | Pending |
 | DECAY-05 | Phase 3 | Pending |
