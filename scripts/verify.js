@@ -118,6 +118,10 @@ function main() {
   if (orderPrefix) orderOpts.prefix = orderPrefix;
   const orderResult = Sim.runOrderingCheck(orderOpts);
 
+  // Plan 03-01 adds the same pattern again for `Sim.runDecayCheck()`
+  // (DECAY-01/DECAY-02) — no baseline file of its own, qualitative checks only.
+  const decayResult = Sim.runDecayCheck();
+
   const lines = [];
   lines.push(`Seed: ${Sim.DEFAULT_SEED}`);
 
@@ -125,7 +129,7 @@ function main() {
 
   printCheckResults(result.checks, knownMismatch, lines, unacknowledgedFailures);
 
-  const allChecks = result.checks.concat(orderResult.checks);
+  const allChecks = result.checks.concat(orderResult.checks, decayResult.checks);
   const acknowledgedFailureCount = allChecks.filter(
     (c) => !c.pass && knownMismatch.acknowledged.indexOf(c.name) !== -1
   ).length;
@@ -172,6 +176,9 @@ function main() {
       'to capture the first one.'
     );
   }
+
+  lines.push('Belief decay & needs regeneration (DECAY-01..05)');
+  printCheckResults(decayResult.checks, knownMismatch, lines, unacknowledgedFailures);
 
   // Plain-run exit code (D-08/D-09.3): all must hold — every failing check
   // acknowledged, both baselines present, and both diffs empty. Acknowledgement never

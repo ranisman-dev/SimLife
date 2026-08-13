@@ -1809,6 +1809,95 @@ function runOrderingCheck(opts = {}) {
   return result;
 }
 
+// ── Belief decay checks (DECAY-01/DECAY-02) ──────────────────
+
+// Follows runOrderingCheck's/runRegressionCheck's contract exactly: builds
+// its own deterministic world, returns { pass, checks }, never prints, never
+// throws, never touches the filesystem. No baseline, no snapshot — these are
+// qualitative checks only. Every check's `detail` carries the observed
+// numbers verbatim so a failure is diagnosable from the printed line alone.
+// Later plans in this phase (needs regeneration, retreat-gate hysteresis)
+// append more checks to this same array — kept easy to extend, and check
+// names stay stable since they're what a known-mismatch.json entry names.
+function runDecayCheck(opts = {}) {
+  const checks = [];
+
+  // DECAY-01, check 1: beliefConfidence agrees with memoryStrength to within
+  // 1e-12 across several ages, for equivalent inputs (belief.confidence
+  // substituted for mem.importance).
+  const belief = { confidence: 0.8, tick: 5 };
+  const memory = { importance: 0.8, tick: 5 };
+  const formulaSamples = [5, 10, 25, 60].map(t => ({
+    tick: t,
+    bc: beliefConfidence(belief, t),
+    ms: memoryStrength(memory, t),
+  }));
+  const formulaMatches = formulaSamples.every(s => Math.abs(s.bc - s.ms) < 1e-12);
+  checks.push({
+    name: 'belief-decay-matches-memory-formula',
+    pass: formulaMatches,
+    detail: formulaSamples.map(s => `t=${s.tick}: beliefConfidence=${s.bc} memoryStrength=${s.ms}`).join(', '),
+  });
+
+  // DECAY-01, check 2: strictly decreasing with age, and the zero-age value
+  // equals the stored confidence exactly (no decay yet at tick === belief.tick).
+  const bcAt5 = beliefConfidence(belief, 5);
+  const bcAt10 = beliefConfidence(belief, 10);
+  const bcAt60 = beliefConfidence(belief, 60);
+  const decaysWithAge = bcAt60 < bcAt10 && bcAt10 < bcAt5 && bcAt5 === belief.confidence;
+  checks.push({
+    name: 'belief-confidence-decays-with-age',
+    pass: decaysWithAge,
+    detail: `tick5=${bcAt5} (stored confidence=${belief.confidence}), tick10=${bcAt10}, tick60=${bcAt60}`,
+  });
+
+  // DECAY-02, checks 3-4: one shared world and one shared belief-push so the
+  // known-false-exempt vs. stale-and-pruned comparison is a true controlled
+  // comparison — same age, same floor, differing only in the exemption tag.
+  // ROADMAP Phase 3 success criterion 2 asks for exactly this comparison.
+  const world = createWorld();
+  world.driftEnabled = false;
+  seedRng(world);
+  const witness = world.agents.mara;
+  const knownFalseId = 'decay-check-known-false';
+  const staleId = 'decay-check-stale';
+  witness.mind.beliefs.push({
+    id: knownFalseId, subject: 'ives', predicate: 'stole_from',
+    data: { subject: 'ives', victim: 'tomas' }, confidence: 0,
+    source: 'gossip from tomas (known false)', tick: 0,
+  });
+  witness.mind.beliefs.push({
+    id: staleId, subject: 'ives', predicate: 'stole_from',
+    data: { subject: 'ives', victim: 'tomas' }, confidence: 0.2,
+    source: 'gossip from tomas', tick: 0,
+  });
+  const beliefCountBefore = witness.mind.beliefs.length;
+  world.tick = 60; // comfortably past the prune horizon for a confidence-0.2 belief at tick 0
+  // Any action mara witnesses runs a belief push (and therefore the prune
+  // filter) — a plain Give between two other agents is the least eventful
+  // action that still gets perceived by every co-located witness.
+  performAction(world, 'player', 'Give', { targetId: 'ives', item: 'gold', quantity: 1 });
+  const beliefIdsAfter = witness.mind.beliefs.map(b => b.id);
+  const beliefCountAfter = witness.mind.beliefs.length;
+
+  const knownFalseSurvived = beliefIdsAfter.includes(knownFalseId);
+  checks.push({
+    name: 'known-false-belief-survives-pruning',
+    pass: knownFalseSurvived,
+    detail: `belief count before=${beliefCountBefore}, after=${beliefCountAfter}; known-false id "${knownFalseId}" ${knownFalseSurvived ? 'survived' : 'did NOT survive'} the push`,
+  });
+
+  const staleComputedConfidence = beliefConfidence({ confidence: 0.2, tick: 0 }, 60);
+  const stalePruned = !beliefIdsAfter.includes(staleId);
+  checks.push({
+    name: 'stale-belief-is-pruned',
+    pass: stalePruned,
+    detail: `computed beliefConfidence at push tick=${staleComputedConfidence}, TUNING.beliefPruneFloor=${TUNING.beliefPruneFloor}; stale id "${staleId}" ${stalePruned ? 'was pruned' : 'was NOT pruned'}`,
+  });
+
+  return { pass: checks.every(c => c.pass), checks };
+}
+
 // ── Public API ──────────────────────────────────────────────
 
 const Sim = {
@@ -1836,6 +1925,7 @@ const Sim = {
   buildOrderingScenario,
   orderingSnapshot,
   runOrderingCheck,
+  runDecayCheck,
 };
 
 if (typeof window !== 'undefined') window.Sim = Sim;
