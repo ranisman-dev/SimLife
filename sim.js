@@ -1024,10 +1024,7 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
   const confidant = pickConfidant(world, witness, actorId, event.data.targetId);
   if (confidant && !believesDead(witness, confidant)) {
     const honestyWeight = getValueWeight(witness, 'Honesty');
-    const truthful = rngOf(world)() < clamp(0.5 + honestyWeight * 0.45, 0.05, 0.97);
-    const subject = truthful ? actorId : pickScapegoat(world, witness, actorId, event.data.targetId);
     const predicate = event.verb === 'Attack' ? 'attacked' : 'stole_from';
-    const claim = { predicate, subject, victim: event.data.targetId, item: event.data.item };
     const generalCare = generalCareOf(witness);
     // Liking the actor makes you less eager to go gossip about them behind their
     // back. Going and finding someone to talk to is itself a social act — an
@@ -1043,8 +1040,28 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
     };
     const gossipScore = (-appraisal.impact) * 0.5 + Object.values(gossipTerms).reduce((a, b) => a + b, 0);
     candidates.push({
-      action: (why) => performAction(world, witness.id, 'Tell', { targetId: confidant, claim }, { causedBy: event.id, why }),
-      label: `tell ${confidant} about ${actorId}${truthful ? '' : ' (misattributed)'}`,
+      // resolve() defers the honesty-flip and scapegoat-pick RNG rolls until this
+      // candidate is actually the winner, instead of drawing them for every witness
+      // who merely reaches the gossip branch. This is the same lazy-evaluation idiom
+      // every candidate's `action` closure already uses to defer its performAction
+      // call (e.g. the attack/press/retreat closures above), extended one step to
+      // cover the two draws that decide *what* is told rather than *whether* to
+      // tell. It's what lets scoreCandidates() (the pure extraction this candidate-
+      // building body feeds) be called twice for the same witness/event — once for
+      // the ordering pre-pass, once for real dispatch — without double-consuming the
+      // RNG stream. LOCKED D-05: RNG still decides only stochastic texture on an
+      // already-decided action, never the decision itself — resolve() only ever
+      // runs after this candidate has already won on its RNG-free score.
+      resolve: () => {
+        const truthful = rngOf(world)() < clamp(0.5 + honestyWeight * 0.45, 0.05, 0.97);
+        const subject = truthful ? actorId : pickScapegoat(world, witness, actorId, event.data.targetId);
+        const claim = { predicate, subject, victim: event.data.targetId, item: event.data.item };
+        return {
+          label: `tell ${confidant} about ${actorId}${truthful ? '' : ' (misattributed)'}`,
+          action: (why) => performAction(world, witness.id, 'Tell', { targetId: confidant, claim }, { causedBy: event.id, why }),
+        };
+      },
+      label: `tell ${confidant} about ${actorId}`,
       score: gossipScore,
       terms: gossipTerms,
     });
@@ -1071,16 +1088,20 @@ function decideAndAct(world, witness, event, appraisal, priorRelationship) {
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates[0];
   const why = explainTerms(best.terms);
+  // resolve() runs at most once, only on the winning candidate — see the
+  // comment on the gossip candidate above for why this is safe and why it
+  // matters once scoring runs twice per witness (Plan 02-03).
+  const resolved = best.resolve ? best.resolve() : best;
 
   witness.mind.log.push({
     tick: event.tick,
     trigger: `ev#${event.id} ${event.verb} by ${actorId}`,
     considered: candidates.map(c => `${c.label}=${c.score.toFixed(2)}`),
-    chose: best.label,
+    chose: resolved.label,
     why,
   });
 
-  if (best.action) best.action(why);
+  if (resolved.action) resolved.action(why);
 }
 
 function pickConfidant(world, witness, excludeId, excludeVictimId) {
