@@ -36,7 +36,7 @@ changing under pressure, plus closing the gaps that currently undercut it.)*
 - [ ] **DECAY-03**: `safety`, `sustenance`, and `belonging` needs regenerate toward
       baseline over time and/or via specific triggers, instead of only ever dropping
 - [x] **DECAY-04**: `belonging` has at least one concrete trigger (its first ever mutator)
-- [ ] **DECAY-05**: The `safety < 0.7` retreat gate uses a hysteresis band so passive
+- [x] **DECAY-05**: The `safety < 0.7` retreat gate uses a hysteresis band so passive
       regeneration crossing the threshold repeatedly doesn't cause flickery, causeless
       retreat behavior
 
@@ -116,7 +116,7 @@ changing under pressure, plus closing the gaps that currently undercut it.)*
 | DECAY-02 | Phase 3 | Complete |
 | DECAY-03 | Phase 3 | Pending |
 | DECAY-04 | Phase 3 | Complete |
-| DECAY-05 | Phase 3 | Pending |
+| DECAY-05 | Phase 3 | Complete |
 | MEMORY-01 | Phase 4 | Pending |
 | MEMORY-02 | Phase 4 | Pending |
 | DRIFT-01 | Phase 5 | Pending |
