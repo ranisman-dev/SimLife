@@ -2244,6 +2244,190 @@ function runDecayCheck(opts = {}) {
     detail: playerGuardError === null ? 'both player actions completed' : playerGuardError,
   });
 
+  // DECAY-05, checks 11-14: two-threshold retreat-gate hysteresis (D-07) plus
+  // a fear-driven discrimination check. Checks 11-13 share one deterministic
+  // world/witness/probe-event trio; check 11 runs BEFORE any retreat history
+  // is established (so isCurrentlyRetreating reads false), checks 12-13 run
+  // AFTER (a synthetic history entry is pushed once, between checks 11 and
+  // 12) — this is what "the same witness-with-history" in check 13's own
+  // comment refers to. Check 14 needs an entirely separate world: it's the
+  // only one of the four that deliberately runs fear HIGH rather than low.
+  //
+  // The probe event is hand-built and never passed through performAction —
+  // appraiseEvent/scoreCandidates only ever READ an event object's fields,
+  // so a probe event that never touches world.events/world.tick cannot
+  // pollute world state or trigger a real reaction cascade. It targets the
+  // witness herself (isVictim: true) so appraisal.impact is strongly
+  // negative regardless of any other agent's incidental relationship
+  // numbers, keeping `reacts` (impact < -0.05) true at every sample without
+  // depending on default-relationship values.
+  const hystWorld = createWorld();
+  hystWorld.driftEnabled = false;
+  seedRng(hystWorld, DEFAULT_SEED);
+  const hystWitness = hystWorld.agents.tomas;
+  const hystActorId = 'garrick';
+  const hystEvent = { id: 90001, actor: hystActorId, verb: 'Attack', data: { targetId: hystWitness.id }, tick: 0, location: 'square' };
+  const hystAppraisal = appraiseEvent(hystWorld, hystWitness, hystEvent);
+  const hystPriorRel = { ...relOf(hystWitness, hystActorId) };
+
+  // Harness precondition, asserted rather than assumed: the safety disjunct
+  // must be the ONLY disjunct capable of opening the gate, or every sample
+  // below would pass vacuously regardless of the band.
+  const hystRelFear = relOf(hystWitness, hystActorId).fear;
+  const hystFearEmotionAtStart = activeEmotionIntensity(hystWitness, 'Fear', hystActorId, hystEvent.tick);
+  const hystPreconditionsHold = hystRelFear <= 0.3 && hystFearEmotionAtStart <= 0.2 && hystAppraisal.impact < -0.05;
+
+  // Sets safety to an exact value V at tick t (adjustNeed regenerates first,
+  // then applies the delta needed to land exactly on V — see adjustNeed's
+  // own comment), then scores at that same tick t so needValue returns
+  // exactly V and passive regeneration cannot confound the sample.
+  function sampleRetreatPresence(world, witness, event, appraisal, priorRel, safetyValue, tick) {
+    event.tick = tick;
+    adjustNeed(witness, 'safety', safetyValue - needValue(witness, 'safety', tick), tick);
+    const { candidates } = scoreCandidates(world, witness, event, appraisal, priorRel);
+    return candidates.some(c => c.label === 'retreat');
+  }
+
+  if (!hystPreconditionsHold) {
+    const failDetail = `harness precondition failed: rel.fear=${hystRelFear} (want <=0.3), fearEmotion=${hystFearEmotionAtStart} (want <=0.2), appraisal.impact=${hystAppraisal.impact} (want <-0.05)`;
+    checks.push({ name: 'hysteresis-enter-threshold-holds', pass: false, detail: failDetail });
+    checks.push({ name: 'hysteresis-persists-in-band', pass: false, detail: failDetail });
+    checks.push({ name: 'hysteresis-exit-threshold-holds', pass: false, detail: failDetail });
+  } else {
+    // Check 11: no retreat history yet (mind.log is still empty at this
+    // point) -> isCurrentlyRetreating is false -> the stricter Enter
+    // threshold applies. 0.72 and 0.60 alone pass or fail identically under
+    // either the old flat 0.7 cutoff or the new 0.65 Enter threshold; the
+    // 0.68 sample is what actually discriminates the two, since it's below
+    // the old 0.7 cutoff but still above the new 0.65 Enter threshold.
+    const enterAt072 = sampleRetreatPresence(hystWorld, hystWitness, hystEvent, hystAppraisal, hystPriorRel, 0.72, 10);
+    const enterAt068 = sampleRetreatPresence(hystWorld, hystWitness, hystEvent, hystAppraisal, hystPriorRel, 0.68, 11);
+    const enterAt060 = sampleRetreatPresence(hystWorld, hystWitness, hystEvent, hystAppraisal, hystPriorRel, 0.60, 12);
+    const enterHolds = !enterAt072 && !enterAt068 && enterAt060;
+    checks.push({
+      name: 'hysteresis-enter-threshold-holds',
+      pass: enterHolds,
+      detail: `no-history witness: safety=0.72 -> retreat present=${enterAt072}; safety=0.68 -> retreat present=${enterAt068}; safety=0.60 -> retreat present=${enterAt060} (TUNING.retreatSafetyEnter=${TUNING.retreatSafetyEnter})`,
+    });
+
+    // Establish "currently retreating for safety" state the way decideAndAct
+    // itself would leave it — a harness seeding the documented state
+    // representation, not a second write path into the mechanism. The
+    // retreatForSafety: true property is mandatory: it's what
+    // isCurrentlyRetreating reads; omitting it would read as NOT retreating
+    // and turn checks 12-13 into vacuous passes.
+    hystWitness.mind.log.push({
+      tick: 12, trigger: 'harness-seeded retreat history', considered: ['retreat=0.50', 'do nothing=0.05'],
+      chose: 'retreat', retreatForSafety: true,
+    });
+
+    // Check 12: hysteresis-persists-in-band. Scripted oscillation across five
+    // successive ticks, all inside [Enter, Exit] — ROADMAP Phase 3 success
+    // criterion 5 stated directly: "does not flicker between retreat and
+    // non-retreat every tick." isCurrentlyRetreating stays true throughout
+    // (nothing in this loop writes to mind.log), so the looser Exit
+    // threshold (0.75) applies at every sample, and every sample in the
+    // sequence is < 0.75.
+    const bandSequence = [0.66, 0.72, 0.68, 0.74, 0.66];
+    const bandTicks = [20, 21, 22, 23, 24];
+    const bandPresence = bandSequence.map((v, i) => sampleRetreatPresence(hystWorld, hystWitness, hystEvent, hystAppraisal, hystPriorRel, v, bandTicks[i]));
+    const bandTransitions = bandPresence.reduce((count, present, i) => (i === 0 ? 0 : count + (present !== bandPresence[i - 1] ? 1 : 0)), 0);
+    const bandHolds = bandPresence.every(p => p === true) && bandTransitions === 0;
+    checks.push({
+      name: 'hysteresis-persists-in-band',
+      pass: bandHolds,
+      detail: `witness-with-history, sequence=${bandSequence.join(',')}: present=${bandPresence.join(',')}, transitions=${bandTransitions} (TUNING.retreatSafetyEnter=${TUNING.retreatSafetyEnter}, TUNING.retreatSafetyExit=${TUNING.retreatSafetyExit})`,
+    });
+
+    // Check 13: hysteresis-exit-threshold-holds. Same witness-with-history,
+    // sampled above the Exit threshold -> the retreat candidate must
+    // disappear.
+    const exitAt078 = sampleRetreatPresence(hystWorld, hystWitness, hystEvent, hystAppraisal, hystPriorRel, 0.78, 30);
+    checks.push({
+      name: 'hysteresis-exit-threshold-holds',
+      pass: exitAt078 === false,
+      detail: `witness-with-history: safety=0.78 -> retreat present=${exitAt078} (TUNING.retreatSafetyExit=${TUNING.retreatSafetyExit})`,
+    });
+  }
+
+  // Check 14: fear-driven-retreat-does-not-latch-safety. The discrimination
+  // check — the only one of the four that deliberately runs fear HIGH rather
+  // than low. Entirely separate world: a fear-driven regime would corrupt
+  // checks 11-13's low-fear precondition if it shared their witness/world.
+  const hyst4World = createWorld();
+  hyst4World.driftEnabled = false;
+  seedRng(hyst4World, DEFAULT_SEED);
+  const hyst4Npcs = Object.values(hyst4World.agents).filter(a => !a.isPlayer);
+  // SELECT the lowest-boldness NPC so retreat can outscore attack (a bolder
+  // witness's confront candidate discounts fear far less) — never assign to
+  // personality itself, which CLAUDE.md documents as set once in
+  // createWorld() and never mutated.
+  const hyst4Witness = hyst4Npcs.reduce((min, a) => (a.mind.personality.boldness < min.mind.personality.boldness ? a : min), hyst4Npcs[0]);
+  const hyst4ActorId = hyst4Npcs.find(a => a.id !== hyst4Witness.id).id;
+  const hyst4Event = { id: 90002, actor: hyst4ActorId, verb: 'Attack', data: { targetId: hyst4Witness.id }, tick: 0, location: 'square' };
+
+  // (a) Safety high, fear high enough that retreat wins on the fear disjunct
+  // alone. rel.fear/the Fear emotion are raised directly as harness setup —
+  // not through the write path being verified, which is only the log entry
+  // produced in step (b) below.
+  adjustNeed(hyst4Witness, 'safety', 0.95 - needValue(hyst4Witness, 'safety', 0), 0);
+  relOf(hyst4Witness, hyst4ActorId).fear = 1;
+  pushEmotion(hyst4Witness, 'Fear', hyst4ActorId, 5, 0);
+  const hyst4SafetyAtDecision = needValue(hyst4Witness, 'safety', 0);
+  const hyst4SafetyPreconditionHolds = hyst4SafetyAtDecision >= 0.9;
+
+  // (b) Produce the log entry through the REAL write path — a direct
+  // decideAndAct(...) call built the way orderWitnesses builds
+  // appraisal/priorRelationship, per this plan's explicitly sanctioned
+  // alternative to performAction. NOT hand-pushed: a synthetic entry would
+  // make this check pass vacuously in exactly the way it exists to prevent.
+  const hyst4Appraisal = appraiseEvent(hyst4World, hyst4Witness, hyst4Event);
+  const hyst4PriorRel = { ...relOf(hyst4Witness, hyst4ActorId) };
+  decideAndAct(hyst4World, hyst4Witness, hyst4Event, hyst4Appraisal, hyst4PriorRel);
+  const hyst4DecisionEntry = hyst4Witness.mind.log[hyst4Witness.mind.log.length - 1];
+  const hyst4RetreatWon = !!hyst4DecisionEntry && hyst4DecisionEntry.chose === 'retreat';
+
+  let hyst4Check;
+  if (!hyst4SafetyPreconditionHolds) {
+    hyst4Check = { pass: false, detail: `harness precondition failed: safety at decision=${hyst4SafetyAtDecision} (want >=0.9)` };
+  } else if (!hyst4RetreatWon) {
+    hyst4Check = {
+      pass: false,
+      detail: `retreat did not win the fear-driven decision: chose="${hyst4DecisionEntry ? hyst4DecisionEntry.chose : '(no entry logged)'}", considered=${hyst4DecisionEntry ? hyst4DecisionEntry.considered.join(' | ') : '(none)'}`,
+    };
+  } else {
+    // (c) retreat won, but not for safety -- assert the marker says so.
+    const hyst4RetreatForSafety = hyst4DecisionEntry.retreatForSafety;
+
+    // (d) Return fear to a quiet regime (cleared directly, not waited out —
+    // both are sanctioned by the plan), set safety to exactly 0.70 (inside
+    // the band) at the sample tick, and score: a witness correctly NOT
+    // latched onto the Exit threshold must show no retreat candidate here.
+    relOf(hyst4Witness, hyst4ActorId).fear = 0.2;
+    hyst4Witness.mind.emotions = hyst4Witness.mind.emotions.filter(e => !(e.emotion === 'Fear' && e.target === hyst4ActorId));
+    const hyst4QuietTick = 50;
+    const hyst4QuietFear = relOf(hyst4Witness, hyst4ActorId).fear;
+    const hyst4QuietFearEmotion = activeEmotionIntensity(hyst4Witness, 'Fear', hyst4ActorId, hyst4QuietTick);
+    const hyst4QuietPreconditionHolds = hyst4QuietFear <= 0.3 && hyst4QuietFearEmotion <= 0.2;
+
+    if (!hyst4QuietPreconditionHolds) {
+      hyst4Check = {
+        pass: false,
+        detail: `quiet-regime precondition failed: rel.fear=${hyst4QuietFear} (want <=0.3), fearEmotion=${hyst4QuietFearEmotion} (want <=0.2)`,
+      };
+    } else {
+      adjustNeed(hyst4Witness, 'safety', 0.70 - needValue(hyst4Witness, 'safety', hyst4QuietTick), hyst4QuietTick);
+      hyst4Event.tick = hyst4QuietTick;
+      const { candidates: hyst4QuietCandidates } = scoreCandidates(hyst4World, hyst4Witness, hyst4Event, hyst4Appraisal, hyst4PriorRel);
+      const hyst4RetreatAtQuiet070 = hyst4QuietCandidates.some(c => c.label === 'retreat');
+      hyst4Check = {
+        pass: hyst4RetreatForSafety === false && hyst4RetreatAtQuiet070 === false,
+        detail: `fear-driven decision: safety=${hyst4SafetyAtDecision}, chose="${hyst4DecisionEntry.chose}", retreatForSafety=${hyst4RetreatForSafety}; quiet-regime sample: fear=${hyst4QuietFear}, fearEmotion=${hyst4QuietFearEmotion}, safety=0.70 -> retreat present=${hyst4RetreatAtQuiet070}`,
+      };
+    }
+  }
+  checks.push({ name: 'fear-driven-retreat-does-not-latch-safety', pass: hyst4Check.pass, detail: hyst4Check.detail });
+
   return { pass: checks.every(c => c.pass), checks };
 }
 
