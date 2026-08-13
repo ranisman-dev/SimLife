@@ -84,7 +84,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02-PLAN.md — Behavior-preserving refactors: gossip RNG deferred into a `resolve()` hook, and the pure `scoreCandidates()` extracted from `decideAndAct`
+- [x] 02-02-PLAN.md — Behavior-preserving refactors: gossip RNG deferred into a `resolve()` hook, and the pure `scoreCandidates()` extracted from `decideAndAct`
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -177,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|-----------------|--------|-----------|
 | 1. Verification Infrastructure | 3/3 | Complete   | 2026-08-12 |
-| 2. Witness Reaction Ordering | 1/4 | In Progress|  |
+| 2. Witness Reaction Ordering | 2/4 | In Progress|  |
 | 3. Belief Decay & Needs Regeneration | 0/1 | Not started | - |
 | 4. Tell/Move-Aware Memory Importance | 0/1 | Not started | - |
 | 5. Slow Trait Drift | 0/1 | Not started | - |
