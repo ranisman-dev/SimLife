@@ -41,6 +41,12 @@ const PREDICATE_LABELS = {
 
 const EMOTION_HALFLIFE_TICKS = 6;
 
+// Single source of truth for each need's default value, read by makeAgent,
+// needValue, and adjustNeed alike — no function carries its own fallback
+// literal. belonging's 0.6 is an initial value, not a different regeneration
+// target (see needValue below); safety/sustenance both default to 1.
+const NEED_DEFAULTS = { safety: 1, sustenance: 1, belonging: 0.6 };
+
 // Single shared home for every new tuning number Phases 2-7 introduce
 // (thresholds, rates, decay constants) — one named block, not split per
 // mechanic, per D-06. Pre-existing constants (MAX_REACTION_DEPTH,
@@ -52,6 +58,13 @@ const TUNING = {
   // to diverge. addMemory's own inline 0.03 is intentionally left as-is per
   // D-07 (pre-existing constants aren't retrofitted into TUNING).
   beliefPruneFloor: 0.03,
+  // PROVISIONAL — finalized in Plan 03-05 Task 1. Asymptotic-approach rate
+  // for needValue()'s regeneration formula (D-04). Coupled to Phase 2's
+  // LOCKED ORDER_SPEC fixture: the victim's safety drops to 0.6 there, and
+  // how fast it climbs back across Plan 03-04's hysteresis band can change
+  // which witnesses produce a retreat candidate, which feeds orderWitnesses'
+  // ranking. Do not tune this value against this plan's checks in isolation.
+  needRegenRate: 0.02,
 };
 
 // The always-reproducible seed seedRng() uses when no explicit seed is
@@ -59,6 +72,23 @@ const TUNING = {
 // baseline. Not a Phase 2 tuning number (D-04) — deliberately kept out of
 // TUNING above.
 const DEFAULT_SEED = 1337;
+
+// Builds the {value, tick} needs record from NEED_DEFAULTS, applying any
+// opts.needs override defensively: a plain-number override (the shape every
+// override would have used before D-04) is normalized into a {value, tick: 0}
+// record; an override already in record shape passes through untouched. No
+// current fixture (CLONE_SPEC, ORDER_SPEC, scripts/verify.js) overrides
+// needs, so this is a defensive normalization, not load-bearing today.
+function buildNeeds(overrides = {}) {
+  const needs = {};
+  Object.keys(NEED_DEFAULTS).forEach(key => {
+    needs[key] = { value: NEED_DEFAULTS[key], tick: 0 };
+  });
+  Object.entries(overrides).forEach(([key, v]) => {
+    needs[key] = (typeof v === 'number') ? { value: v, tick: 0 } : v;
+  });
+  return needs;
+}
 
 function makeAgent(id, name, opts = {}) {
   const isPlayer = !!opts.isPlayer;
@@ -81,7 +111,7 @@ function makeAgent(id, name, opts = {}) {
       values: opts.values || [], // [{ value: 'Justice', weight: 0.7 }, ...] — weight in [-1, 1]
       worldview: opts.worldview || [], // [{ belief: 'JustWorld', weight: 0.6 }, ...] — durable, not situational
       beliefs: [],                // propositional: {id, subject, predicate, data, confidence, source, tick, eventId}
-      needs: { safety: 1, sustenance: 1, belonging: 0.6, ...(opts.needs || {}) },
+      needs: buildNeeds(opts.needs),
       emotions: [],                // transient: {emotion, target, intensity, tick} — decays, doesn't persist like relationships
       relationships: {},           // otherId -> {trust, affection, fear, grievance}
       memories: [],                 // episodic pointers: {id, eventId, tick, importance}
@@ -366,7 +396,7 @@ function applyEffects(world, actor, verb, params) {
       target.inventory[item] -= qty;
       actor.inventory[item] = (actor.inventory[item] || 0) + qty;
       if (!target.isPlayer && item === 'bread' && target.inventory.bread === 0) {
-        adjustNeed(target, 'sustenance', -0.4);
+        adjustNeed(target, 'sustenance', -0.4, world.tick);
         upsertGoal(target, 'ReplenishFood', null, 0.4, world.tick, 'future');
       }
       return { location: actor.location, data: { targetId: target.id, item, quantity: qty, consented: false } };
@@ -384,7 +414,7 @@ function applyEffects(world, actor, verb, params) {
       const damage = 15 + Math.floor(rngOf(world)() * 15);
       target.health = Math.max(0, target.health - damage);
       if (target.health === 0) target.alive = false;
-      if (!target.isPlayer) adjustNeed(target, 'safety', -0.4);
+      if (!target.isPlayer) adjustNeed(target, 'safety', -0.4, world.tick);
       return { location: actor.location, data: { targetId: target.id, damage, targetSurvived: target.alive } };
     }
     case 'Tell': {
@@ -477,8 +507,33 @@ function computeWitnesses(world, event) {
 
 // ── Needs / Emotions / Memories / Goals helpers ─────────────────
 
-function adjustNeed(agent, needName, delta) {
-  agent.mind.needs[needName] = clamp((agent.mind.needs[needName] ?? 1) + delta, 0, 1);
+// D-04: needs' side of the same lazy-computed-live idiom memoryStrength and
+// activeEmotionIntensity already establish — a need only ever moves toward 1
+// (never away, unlike belief/memory decay), computed at read time from
+// (storedValue, formedTick, currentTick) rather than swept on a schedule.
+// Pure: no assignment to `agent`, `agent.mind`, or the record — a
+// write-back-on-read would make snapshotWorld()'s golden-master output
+// depend on what got read and when, since it serializes whatever raw values
+// sit on the object at snapshot time. Mirrors memoryStrength/
+// activeEmotionIntensity, neither of which writes back either.
+function needValue(agent, needKey, currentTick) {
+  const record = (agent.mind.needs && agent.mind.needs[needKey]) || { value: NEED_DEFAULTS[needKey], tick: 0 };
+  const age = Math.max(0, currentTick - record.tick);
+  // Asymptotic approach toward 1 — the asymmetric 0.6 belonging default is an
+  // initial value, not a different target; all three needs regenerate toward
+  // the same ceiling.
+  const regenerated = 1 - (1 - record.value) * Math.pow(1 - TUNING.needRegenRate, age);
+  return clamp(regenerated, 0, 1);
+}
+
+// Regenerates first (via needValue), then applies delta, then re-stamps the
+// tick — in that order. Regenerating before applying is what prevents an
+// adjustment from silently erasing accumulated regeneration: without it, a
+// need lowered at tick 5 and adjusted again at tick 40 would lose 35 ticks
+// of recovery it had already earned.
+function adjustNeed(agent, needName, delta, tick) {
+  const regenerated = needValue(agent, needName, tick);
+  agent.mind.needs[needName] = { value: clamp(regenerated + delta, 0, 1), tick };
 }
 
 function pushEmotion(agent, emotion, targetId, intensity, tick) {
@@ -1210,12 +1265,13 @@ function scoreCandidates(world, witness, event, appraisal, priorRelationship) {
   }
 
   const fearEmotion = activeEmotionIntensity(witness, 'Fear', actorId, event.tick);
-  if (rel.fear > 0.3 || witness.mind.needs.safety < 0.7 || fearEmotion > 0.2) {
+  const safety = needValue(witness, 'safety', event.tick);
+  if (rel.fear > 0.3 || safety < 0.7 || fearEmotion > 0.2) {
     // Valuing Safety highly makes the pull to get away from danger stronger on top
     // of how scared the witness actually is right now.
     const retreatTerms = {
       fear: (rel.fear * 0.6 + fearEmotion * 0.3) * (1 - boldness),
-      'low safety': (1 - witness.mind.needs.safety) * 0.3 * (1 - boldness),
+      'low safety': (1 - safety) * 0.3 * (1 - boldness),
       Safety: getValueWeight(witness, 'Safety') * 0.15,
     };
     const retreatScore = Object.values(retreatTerms).reduce((a, b) => a + b, 0);
@@ -1895,6 +1951,96 @@ function runDecayCheck(opts = {}) {
     detail: `computed beliefConfidence at push tick=${staleComputedConfidence}, TUNING.beliefPruneFloor=${TUNING.beliefPruneFloor}; stale id "${staleId}" ${stalePruned ? 'was pruned' : 'was NOT pruned'}`,
   });
 
+  // DECAY-03, check 5: needs-regenerate-over-time. Lower an NPC's safety via
+  // a real Attack (through performAction, so the drop comes from the real
+  // adjustNeed path, not a hand-poked field), then assert needValue reads
+  // strictly increase over elapsed ticks and never exceed 1. The other three
+  // NPCs are moved 'away' first so garrick is the only witness of the
+  // Attack — this keeps the scenario deterministic by avoiding a reaction
+  // cascade that could touch garrick's safety a second time. ROADMAP Phase 3
+  // success criterion 3 for `safety`.
+  const needsWorld = createWorld();
+  needsWorld.driftEnabled = false;
+  seedRng(needsWorld);
+  ['mara', 'ives', 'tomas', 'elena'].forEach(id => performAction(needsWorld, id, 'Move', { toLocation: 'away' }));
+  const safetyVictim = needsWorld.agents.garrick;
+  const attackRes = performAction(needsWorld, 'player', 'Attack', { targetId: 'garrick' });
+  const safetyEventTick = attackRes.event.tick;
+  const safetyAtFormation = needValue(safetyVictim, 'safety', safetyEventTick);
+  const safetyAt20 = needValue(safetyVictim, 'safety', safetyEventTick + 20);
+  const safetyAt100 = needValue(safetyVictim, 'safety', safetyEventTick + 100);
+  const safetyRegenerates = Math.abs(safetyAtFormation - 0.6) < 0.05 &&
+    safetyAt20 > safetyAtFormation && safetyAt100 > safetyAt20 && safetyAt100 <= 1;
+  checks.push({
+    name: 'needs-regenerate-over-time',
+    pass: safetyRegenerates,
+    detail: `safety at formation (tick ${safetyEventTick})=${safetyAtFormation}, at +20=${safetyAt20}, at +100=${safetyAt100}`,
+  });
+
+  // DECAY-03, check 6: the same assertion shape applied to sustenance and
+  // belonging, confirming the accessor is not safety-specific. sustenance's
+  // drop comes from a real Take (through performAction, same real-path
+  // requirement as check 5 above) — tomas starts with 1 bread, so taking 1
+  // empties it and fires the real sustenance hook. belonging has no real
+  // trigger yet in this plan (D-05's Give/Tell hook lands in Plan 03-03), so
+  // its regeneration is demonstrated straight off makeAgent's asymmetric 0.6
+  // default record — belonging starts at 0.6 and rises toward 1 like the
+  // others, per D-06, with no hand-poking needed to show that.
+  const sustenanceWorld = createWorld();
+  sustenanceWorld.driftEnabled = false;
+  seedRng(sustenanceWorld);
+  ['mara', 'ives', 'elena', 'garrick'].forEach(id => performAction(sustenanceWorld, id, 'Move', { toLocation: 'away' }));
+  const sustenanceVictim = sustenanceWorld.agents.tomas;
+  const takeRes = performAction(sustenanceWorld, 'player', 'Take', { targetId: 'tomas', item: 'bread', quantity: 1 });
+  const sustenanceEventTick = takeRes.event.tick;
+  const sustenanceAtFormation = needValue(sustenanceVictim, 'sustenance', sustenanceEventTick);
+  const sustenanceAt20 = needValue(sustenanceVictim, 'sustenance', sustenanceEventTick + 20);
+  const sustenanceAt100 = needValue(sustenanceVictim, 'sustenance', sustenanceEventTick + 100);
+
+  const belongingWorld = createWorld();
+  seedRng(belongingWorld);
+  const belongingAgent = belongingWorld.agents.mara;
+  const belongingAtFormation = needValue(belongingAgent, 'belonging', 0);
+  const belongingAt20 = needValue(belongingAgent, 'belonging', 20);
+  const belongingAt100 = needValue(belongingAgent, 'belonging', 100);
+
+  const allThreeRegenerate =
+    sustenanceAt20 > sustenanceAtFormation && sustenanceAt100 > sustenanceAt20 && sustenanceAt100 <= 1 &&
+    belongingAt20 > belongingAtFormation && belongingAt100 > belongingAt20 && belongingAt100 <= 1;
+  checks.push({
+    name: 'all-three-needs-regenerate',
+    pass: allThreeRegenerate,
+    detail: `sustenance: formation(tick ${sustenanceEventTick})=${sustenanceAtFormation}, +20=${sustenanceAt20}, +100=${sustenanceAt100}; belonging: formation=${belongingAtFormation}, +20=${belongingAt20}, +100=${belongingAt100}`,
+  });
+
+  // DECAY-03, check 7: needValue must never write back to the object it
+  // reads — snapshotWorld() serializes raw stored values, so a
+  // write-back-on-read would make the golden-master baseline depend on read
+  // order/history. Snapshot every NPC's needs, call needValue for all three
+  // keys at several ticks in a deliberately scrambled (non-monotonic) order,
+  // then assert the stringified needs are byte-identical to the snapshot.
+  const purityWorld = createWorld();
+  seedRng(purityWorld);
+  const purityNpcs = Object.values(purityWorld.agents).filter(a => !a.isPlayer);
+  const needsSnapshotBefore = purityNpcs.map(a => JSON.stringify(a.mind.needs));
+  let purityReadsPerformed = 0;
+  const scrambledTicks = [37, 0, 200, 5, 91];
+  purityNpcs.forEach(a => {
+    scrambledTicks.forEach(t => {
+      ['belonging', 'safety', 'sustenance'].forEach(key => {
+        needValue(a, key, t);
+        purityReadsPerformed++;
+      });
+    });
+  });
+  const needsSnapshotAfter = purityNpcs.map(a => JSON.stringify(a.mind.needs));
+  const needValueIsPure = needsSnapshotBefore.every((s, i) => s === needsSnapshotAfter[i]);
+  checks.push({
+    name: 'needvalue-is-pure',
+    pass: needValueIsPure,
+    detail: `agents=${purityNpcs.length}, reads=${purityReadsPerformed}, needs unchanged=${needValueIsPure}`,
+  });
+
   return { pass: checks.every(c => c.pass), checks };
 }
 
@@ -1917,6 +2063,7 @@ const Sim = {
   scoreCandidates,
   memoryStrength,
   beliefConfidence,
+  needValue,
   scenarioParticipants,
   snapshotWorld,
   diffSnapshots,
