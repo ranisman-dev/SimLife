@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-08-14T04:56:23.914Z",
+  "phase": "04",
+  "phase_name": "tell-move-aware-memory-importance",
+  "phase_dir": ".planning/phases/04-tell-move-aware-memory-importance",
+  "plan": 1,
+  "task": 1,
+  "total_tasks": 12,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": "04-01-task1", "name": "TELL_SEVERITY table + appraiseEvent's Tell branch", "status": "done_but_needs_fix", "commit": "04747d8 (in worktree agent-a2540983e2d025d63, NOT merged)"},
+    {"id": "04-01-task2", "name": "Numeric verification + cascade trace (investigation only)", "status": "done", "commit": "a379f1d (SUMMARY.md, in worktree, NOT merged)"}
+  ],
+  "remaining_tasks": [
+    {"id": "attributedTo-fix", "name": "Add generic attributedTo field to appraiseEvent (defaults to event.actor; Tell sets null); applyAppraisal reads appraisal.attributedTo instead of hardcoding event.actor, no-ops when null", "status": "not_started"},
+    {"id": "04-01-reverify", "name": "Re-run node scripts/verify.js in the 04-01 worktree, confirm positive-clone-attacks-player and reactions-diverge are meaningfully green again (not just string-different)", "status": "not_started"},
+    {"id": "04-01-merge", "name": "Merge worktree-agent-a2540983e2d025d63 into main, delete worktree/branch", "status": "not_started"},
+    {"id": "04-CONTEXT-update", "name": "Add D-09 to 04-CONTEXT.md documenting the attributedTo fix and rationale", "status": "not_started"},
+    {"id": "04-02-plan-fix", "name": "Amend 04-02-PLAN.md's Move flight branch (D-04/D-08) to also set attributedTo: null on the appraisal, per the advisor's forward warning -- otherwise Wave 2 hits the identical misattribution bug", "status": "not_started"},
+    {"id": "wave2", "name": "Execute 04-02 (Move branch + raised importance ceiling)", "status": "not_started"},
+    {"id": "wave3", "name": "Execute 04-03 (runMemoryImportanceCheck + verify.js wiring + regression verification)", "status": "not_started"},
+    {"id": "wave4", "name": "Execute 04-04 (golden-master re-bless + PERSON-MODEL.md doc sync + human browser checkpoint)", "status": "not_started"},
+    {"id": "phase4-close", "name": "Mark Phase 4 complete, push to origin", "status": "not_started"},
+    {"id": "final-report", "name": "Produce the comprehensive final report the user requested at session start (all work done, all decisions made, all pending human-verification items) and STOP before Phase 5 for user design input", "status": "not_started"}
+  ],
+  "blockers": [
+    {
+      "description": "Real correctness bug found in sim.js's existing applyAppraisal() (not new code from this phase): it hardcodes event.actor as the relational-consequence target (trust/affection/grievance/emotions/SeekRestitution goal). That's correct for Take/Attack/Give (the actor did it to you) but wrong for Tell (the actor is the messenger, not who the claim is about -- applyClaimBelief already correctly routes Tell's relational consequences to claim.subject, so applyAppraisal firing on Tell double-counts at the wrong target). This is what flipped Phase 1's positive-clone-attacks-player regression check: ives ends up attacking mara (the messenger who gossiped) instead of player (who actually attacked mara).",
+      "type": "technical",
+      "workaround": "Confirmed fix via advisor consultation, NOT YET IMPLEMENTED: give appraiseEvent's return shape a generic attributedTo field, defaulting to event.actor (unchanged behavior for Take/Attack/Give), explicitly null for Tell (and must also be null for Move's D-04 flight branch once 04-02 is written, same bug would otherwise recur). applyAppraisal reads appraisal.attributedTo instead of event.actor everywhere, and no-ops (skips all relational/emotional/goal work) when it's null/falsy -- impact still flows into addMemory() for memory-importance purposes since that happens earlier in perceiveEvent, unaffected by this fix."
+    }
+  ],
+  "human_actions_pending": [
+    {"action": "Browser verification per .planning/phases/01-verification-infrastructure/01-HUMAN-UAT.md (2 items: typed player command, reset-button RNG re-seed)", "context": "No headless browser in this repo; Phase 1 checkpoint", "blocking": false},
+    {"action": "Browser verification per .planning/phases/02-witness-reaction-ordering/02-04-HUMAN-UAT.md (witness dispatch ordering, mind inspector)", "context": "Phase 2 checkpoint", "blocking": false},
+    {"action": "Browser verification per .planning/phases/03-belief-decay-needs-regeneration/03-05-HUMAN-UAT.md (needs bars, belief decay, player Give, debug report)", "context": "Phase 3 checkpoint", "blocking": false},
+    {"action": "Phase 4's own 04-04 closing plan will add a fourth browser checkpoint (memories rendering above 1.0 importance) once execution reaches Wave 4", "context": "Not yet reached", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "Merged origin/main into local main (not force-push) after discovering origin had diverged with a net-no-op add-then-revert history; pushed the resulting merge. Local and origin are now in sync.", "rationale": "User explicitly chose 'push local main forward, ignore the revert' after confirming origin's 4 commits netted to zero diff versus the session's starting point -- merging preserves history without force.", "phase": "04"},
+    {"decision": "04-04-PLAN.md was hand-written by the orchestrator (not the planner agent, which hit a session usage limit after writing 04-01/02/03) following 03-05-PLAN.md's exact structure as a template. Plan-checker subsequently verified it did not drift from what 04-01/02/03 actually shipped.", "rationale": "Planner agent failure mid-session; closing plan still needed before execution could proceed.", "phase": "04"},
+    {"decision": "Two plan-checker blockers fixed directly (not re-planned): 04-01 Task 2 and 04-03 check 1 both picked Tell teller/subject pairs that accidentally hit tomas's pre-seeded backstory relationship toward mara (trust 0.3, affection -0.3, set in createWorld()), undershooting the >1.0 flagship assertion. Anchored both to garrick/ives, confirmed both start with zero pre-seeded relationships.", "rationale": "Mechanical, narrow fixes matching the checker's own suggested resolution -- consistent with how Phase 1-3 warnings/blockers were handled.", "phase": "04"},
+    {"decision": "Rejected relaxing the positive-clone-attacks-player check to accommodate Tell's new impact. Confirmed via advisor that the check flipping is a symptom of a real applyAppraisal misattribution bug, not legitimate emergent behavior -- the fix belongs in applyAppraisal's attribution logic, not in loosening the check's assertion.", "rationale": "advisor traced applyClaimBelief's existing per-predicate routing (sim.js:1099-1122) already correctly attributes Tell's relational consequences to claim.subject; applyAppraisal firing on top of that for event.actor (the messenger) is double-counting at the wrong target. Also flagged the same bug would hit Move's flight case in Plan 04-02 if not fixed generically now.", "phase": "04"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "cd C:\\Users\\rebec\\Documents\\SimLife\\.claude\\worktrees\\agent-a2540983e2d025d63 -- implement the attributedTo fix in sim.js there (appraiseEvent + applyAppraisal), re-run node scripts/verify.js and confirm positive-clone-attacks-player is genuinely green (ives attacks player, not a string-different-but-still-inert pass), then merge that worktree into main before touching 04-02-PLAN.md.",
+  "context_notes": "Session ran Phases 1-4 mostly autonomously per user's 'do everything you can without my input' instruction from earlier in the session, holding only genuine human-verification items. Phase 4 planning/plan-checking is done and clean. Wave 1 execution (04-01) surfaced a real, pre-existing engine bug (not a Phase-4-introduced defect, though only exposed by Phase 4 giving Tell nonzero impact for the first time) that needed an architectural call -- resolved via advisor before any further waves execute, per the standing instruction to call advisor before committing to an approach on stuck/architectural moments. Paused here (not mid-edit) specifically because context hit 79% usage and starting the sim.js edit right then risked a half-finished core-engine change."
+}
